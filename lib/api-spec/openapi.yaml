@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ChartMind API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: analyses
+    description: Chart analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /analyses:
+    get:
+      operationId: listAnalyses
+      tags: [analyses]
+      summary: List analyses
+      description: Returns paginated analysis history
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of analyses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisList"
+    post:
+      operationId: createAnalysis
+      tags: [analyses]
+      summary: Analyze a chart
+      description: Runs the full analysis pipeline on an uploaded chart image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisInput"
+      responses:
+        "201":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /analyses/stats:
+    get:
+      operationId: getAnalysisStats
+      tags: [analyses]
+      summary: Get analysis statistics
+      description: Returns aggregate stats for the dashboard
+      responses:
+        "200":
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisStats"
+
+  /analyses/{id}:
+    get:
+      operationId: getAnalysis
+      tags: [analyses]
+      summary: Get a single analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAnalysis
+      tags: [analyses]
+      summary: Delete an analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +144,80 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    AnalysisInput:
+      type: object
+      properties:
+        imageUrl:
+          type: string
+          description: Base64 data URL
+        timeframe:
+          type: string
+          enum: [5m, 15m, 1h, 4h, 1D]
+      required: [imageUrl, timeframe]
+
+    Analysis:
+      type: object
+      properties:
+        id:
+          type: integer
+        timeframe:
+          type: string
+        imageUrl:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        promptVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, timeframe, imageUrl, result, promptVersion, createdAt]
+
+    AnalysisList:
+      type: object
+      properties:
+        analyses:
+          type: array
+          items:
+            $ref: "#/components/schemas/Analysis"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [analyses, total, page, limit]
+
+    AnalysisStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        bullish:
+          type: integer
+        bearish:
+          type: integer
+        neutral:
+          type: integer
+        avgConfidence:
+          type: number
+        byTimeframe:
+          type: array
+          items:
+            type: object
+            properties:
+              timeframe:
+                type: string
+              count:
+                type: integer
+            required: [timeframe, count]
+      required: [total, bullish, bearish, neutral, avgConfidence, byTimeframe]
