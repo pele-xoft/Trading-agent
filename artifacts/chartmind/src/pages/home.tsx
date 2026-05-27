@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UploadComponent } from "../components/UploadComponent";
 import { AnalysisCard } from "../components/AnalysisCard";
 import { HistoryList } from "../components/HistoryList";
+import { StatsPanel } from "../components/StatsPanel";
 import type { AnalysisRecord, Timeframe } from "../types";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
@@ -12,6 +13,12 @@ async function fetchAnalyses(): Promise<AnalysisRecord[]> {
   if (!res.ok) throw new Error("Failed to load history");
   const data = await res.json();
   return data.analyses ?? [];
+}
+
+async function fetchStats() {
+  const res = await fetch(`${API_BASE}/analyses/stats`);
+  if (!res.ok) throw new Error("Failed to load stats");
+  return res.json();
 }
 
 async function runAnalysis(payload: { imageUrl: string; timeframe: Timeframe }): Promise<AnalysisRecord> {
@@ -27,7 +34,13 @@ async function runAnalysis(payload: { imageUrl: string; timeframe: Timeframe }):
   return res.json();
 }
 
-type Tab = "analyze" | "history";
+type Tab = "analyze" | "history" | "stats";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "analyze", label: "Analyze" },
+  { id: "history", label: "History" },
+  { id: "stats", label: "Stats" },
+];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("analyze");
@@ -42,12 +55,18 @@ export default function Home() {
     queryFn: fetchAnalyses,
   });
 
+  const statsQuery = useQuery({
+    queryKey: ["analyses-stats"],
+    queryFn: fetchStats,
+  });
+
   const analyzeMutation = useMutation({
     mutationFn: runAnalysis,
     onSuccess: (data) => {
       setCurrentAnalysis(data);
       setErrorMsg(null);
       queryClient.invalidateQueries({ queryKey: ["analyses"] });
+      queryClient.invalidateQueries({ queryKey: ["analyses-stats"] });
     },
     onError: (err) => {
       setErrorMsg(err instanceof Error ? err.message : "Analysis failed");
@@ -87,23 +106,29 @@ export default function Home() {
 
       {/* Tabs */}
       <div className="flex border-b px-4" style={{ borderColor: "hsl(var(--border))" }}>
-        {(["analyze", "history"] as Tab[]).map((tab) => (
+        {TABS.map(({ id, label }) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className="py-3 px-1 mr-6 text-sm font-semibold capitalize relative transition-colors"
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className="py-3 px-1 mr-5 text-sm font-semibold relative transition-colors"
             style={{
-              color: activeTab === tab ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+              color: activeTab === id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
             }}
           >
-            {tab}
-            {tab === "history" && (historyQuery.data?.length ?? 0) > 0 && (
+            {label}
+            {id === "history" && (historyQuery.data?.length ?? 0) > 0 && (
               <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
                 style={{ background: "var(--cm-accent-dim)", color: "var(--cm-accent)" }}>
                 {historyQuery.data!.length}
               </span>
             )}
-            {activeTab === tab && (
+            {id === "stats" && (statsQuery.data?.total ?? 0) > 0 && (
+              <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
+                style={{ background: "var(--cm-neutral-dim)", color: "var(--cm-neutral)" }}>
+                {statsQuery.data!.total}
+              </span>
+            )}
+            {activeTab === id && (
               <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full"
                 style={{ background: "var(--cm-accent)" }} />
             )}
@@ -113,6 +138,8 @@ export default function Home() {
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+
+        {/* ── ANALYZE TAB ── */}
         {activeTab === "analyze" && (
           <>
             <UploadComponent
@@ -120,7 +147,6 @@ export default function Home() {
               isAnalyzing={analyzeMutation.isPending}
             />
 
-            {/* Error */}
             {errorMsg && (
               <div className="rounded-xl px-4 py-3 text-sm cm-fade-in"
                 style={{ background: "var(--cm-bearish-dim)", color: "var(--cm-bearish)", border: "1px solid var(--cm-bearish)" }}>
@@ -128,7 +154,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Loading state */}
             {analyzeMutation.isPending && (
               <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
                 <div className="cm-spin w-8 h-8 border-2 rounded-full"
@@ -142,12 +167,10 @@ export default function Home() {
               </div>
             )}
 
-            {/* Analysis result */}
             {currentAnalysis && !analyzeMutation.isPending && (
               <AnalysisCard analysis={currentAnalysis} />
             )}
 
-            {/* Empty state */}
             {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
               <div className="flex flex-col items-center gap-3 py-8 text-center">
                 <div className="text-3xl">🧠</div>
@@ -162,6 +185,7 @@ export default function Home() {
           </>
         )}
 
+        {/* ── HISTORY TAB ── */}
         {activeTab === "history" && (
           <>
             {historyQuery.isLoading && (
@@ -177,6 +201,25 @@ export default function Home() {
                 selectedId={selectedId}
               />
             )}
+          </>
+        )}
+
+        {/* ── STATS TAB ── */}
+        {activeTab === "stats" && (
+          <>
+            {statsQuery.isLoading && (
+              <div className="flex justify-center py-8">
+                <div className="cm-spin w-6 h-6 border-2 rounded-full"
+                  style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
+              </div>
+            )}
+            {statsQuery.isError && (
+              <div className="rounded-xl px-4 py-3 text-sm"
+                style={{ background: "var(--cm-bearish-dim)", color: "var(--cm-bearish)" }}>
+                Failed to load stats
+              </div>
+            )}
+            {statsQuery.data && <StatsPanel stats={statsQuery.data} />}
           </>
         )}
       </main>

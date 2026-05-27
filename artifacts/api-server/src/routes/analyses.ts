@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, analysesTable } from "@workspace/db";
-import { desc, eq, sql, count } from "drizzle-orm";
+import { desc, eq, count } from "drizzle-orm";
 import { analyzeChart } from "../lib/ai.service.js";
+import { uploadChartImage } from "../lib/supabase.js";
 
 const router = Router();
 
@@ -40,6 +41,20 @@ router.post("/", async (req, res) => {
 
     const { instrument } = req.body as { instrument?: string };
 
+    // Upload image to Supabase Storage (in parallel with nothing yet — fast)
+    let storedImageUrl = imageUrl; // fallback to data URL
+    try {
+      const { imageUrl: supabaseUrl } = await uploadChartImage({
+        base64: imageBase64,
+        mimeType,
+        timeframe,
+      });
+      storedImageUrl = supabaseUrl;
+      req.log.info({ supabaseUrl }, "Image uploaded to Supabase Storage");
+    } catch (uploadErr) {
+      req.log.warn({ err: uploadErr }, "Supabase Storage upload failed — storing as data URL");
+    }
+
     // Run AI analysis
     const { result, processingTimeMs, promptVersion, model } = await analyzeChart({
       imageBase64,
@@ -53,7 +68,7 @@ router.post("/", async (req, res) => {
       status: "complete",
       timeframe,
       instrument: instrument ?? null,
-      imageUrl,
+      imageUrl: storedImageUrl,
       promptVersion,
       aiModel: model,
       processingTimeMs,
@@ -115,13 +130,13 @@ router.get("/stats", async (req, res) => {
     const byTimeframe: Record<string, number> = {};
 
     for (const r of rows) {
-      const res2 = r.result as Record<string, unknown> | null;
-      if (res2) {
-        const bias = res2.marketBias as string;
+      const result = r.result as Record<string, unknown> | null;
+      if (result) {
+        const bias = result.marketBias as string;
         if (bias === "bullish") bullish++;
         else if (bias === "bearish") bearish++;
         else neutral++;
-        if (typeof res2.confidence === "number") { totalConf += res2.confidence; confCount++; }
+        if (typeof result.confidence === "number") { totalConf += result.confidence; confCount++; }
       }
       byTimeframe[r.timeframe] = (byTimeframe[r.timeframe] ?? 0) + 1;
     }
@@ -174,19 +189,6 @@ router.delete("/:id", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to delete analysis");
     return res.status(500).json({ error: "Failed to delete analysis" });
-  }
-});
-
-// POST /api/upload — just return the data URL back
-router.post("/upload", async (req, res) => {
-  try {
-    const { imageData, mimeType } = req.body as { imageData?: string; mimeType?: string };
-    if (!imageData || !mimeType) return res.status(400).json({ error: "imageData and mimeType are required" });
-    const imageUrl = `data:${mimeType};base64,${imageData}`;
-    return res.json({ imageUrl });
-  } catch (err) {
-    req.log.error({ err }, "Upload failed");
-    return res.status(500).json({ error: "Upload failed" });
   }
 });
 
