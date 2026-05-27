@@ -1,81 +1,195 @@
+import { useEffect, useState } from "react";
 import type { AnalysisRecord, MarketBias, TradeType } from "../types";
 
-interface AnalysisCardProps {
-  analysis: AnalysisRecord;
+// ── Count-up hook ─────────────────────────────────────────────────────────────
+function useCountUp(to: number, duration = 1200): number {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const ease = 1 - Math.pow(1 - t, 4);
+      setVal(Math.round(to * ease));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [to, duration]);
+  return val;
 }
 
-function BiasChip({ bias }: { bias: MarketBias }) {
-  const config = {
-    bullish: { label: "BULLISH", bg: "var(--cm-bullish-dim)", color: "var(--cm-bullish)", border: "var(--cm-bullish)" },
-    bearish: { label: "BEARISH", bg: "var(--cm-bearish-dim)", color: "var(--cm-bearish)", border: "var(--cm-bearish)" },
-    neutral: { label: "NEUTRAL", bg: "var(--cm-neutral-dim)", color: "var(--cm-neutral)", border: "var(--cm-neutral)" },
-  }[bias];
+// ── Confidence ring ───────────────────────────────────────────────────────────
+function ConfidenceRing({ value }: { value: number }) {
+  const size = 88;
+  const r = 32;
+  const circ = 2 * Math.PI * r;
+  const dash = (value / 100) * circ;
+  const color = value >= 70 ? "var(--cm-bullish)" : value >= 50 ? "var(--cm-amber)" : "var(--cm-bearish)";
+  const label = value >= 70 ? "HIGH" : value >= 50 ? "MODERATE" : "LOW";
+  const displayed = useCountUp(value);
 
   return (
-    <span className="text-xs font-bold px-2.5 py-1 rounded-full border"
-      style={{ background: config.bg, color: config.color, borderColor: config.border, fontFamily: "var(--font-mono, monospace)" }}>
-      {config.label}
-    </span>
-  );
-}
-
-function SetupChip({ type }: { type: TradeType }) {
-  const config = {
-    buy: { label: "BUY", bg: "var(--cm-bullish-dim)", color: "var(--cm-bullish)" },
-    sell: { label: "SELL", bg: "var(--cm-bearish-dim)", color: "var(--cm-bearish)" },
-    wait: { label: "WAIT", bg: "var(--cm-neutral-dim)", color: "var(--cm-neutral)" },
-  }[type];
-
-  return (
-    <span className="text-xs font-bold px-2.5 py-1 rounded-full"
-      style={{ background: config.bg, color: config.color, fontFamily: "var(--font-mono, monospace)" }}>
-      {config.label}
-    </span>
-  );
-}
-
-function ConfidenceBar({ value }: { value: number }) {
-  const color = value >= 70 ? "var(--cm-bullish)" : value >= 50 ? "var(--cm-accent)" : "var(--cm-bearish)";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 rounded-full h-1.5 overflow-hidden" style={{ background: "hsl(var(--border))" }}>
-        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${value}%`, background: color }} />
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+          style={{ transform: "rotate(-90deg)" }}>
+          <circle cx={size/2} cy={size/2} r={r} fill="none" strokeWidth={6}
+            stroke="rgba(255,255,255,0.05)" />
+          <circle cx={size/2} cy={size/2} r={r} fill="none" strokeWidth={6}
+            stroke={color} strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+            style={{ transition: "stroke-dasharray 1.2s cubic-bezier(0.4,0,0.2,1)", filter: `drop-shadow(0 0 6px ${color})` }} />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-black leading-none" style={{ fontFamily: "var(--cm-font-mono)", color, fontSize: "1.25rem" }}>
+            {displayed}
+          </span>
+          <span style={{ color, fontSize: "0.5rem", fontFamily: "var(--cm-font-display)", letterSpacing: "0.08em", fontWeight: 700 }}>
+            CONF
+          </span>
+        </div>
       </div>
-      <span className="text-xs font-bold" style={{ color, fontFamily: "var(--font-mono, monospace)", minWidth: "2rem", textAlign: "right" }}>
-        {value}%
+      <span className="text-xs font-bold" style={{ fontFamily: "var(--cm-font-display)", color, fontSize: "0.6rem", letterSpacing: "0.1em" }}>
+        {label} CONVICTION
       </span>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-bold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>
-        {title}
-      </h3>
-      {children}
-    </div>
-  );
-}
+// ── Indicator pills ───────────────────────────────────────────────────────────
+interface PillData { label: string; value: string; color: string; bg: string }
 
-function Row({ label, value, valueStyle }: { label: string; value: string; valueStyle?: React.CSSProperties }) {
+function IndicatorPill({ pill, idx }: { pill: PillData; idx: number }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="flex items-center justify-between py-1.5 border-b" style={{ borderColor: "hsl(var(--border))" }}>
-      <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>{label}</span>
-      <span className="text-xs font-semibold" style={valueStyle ?? { color: "hsl(var(--foreground))", fontFamily: "var(--font-mono, monospace)" }}>
-        {value}
+    <button onClick={() => setOpen(v => !v)}
+      className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-150"
+      style={{
+        background: open ? pill.bg : "var(--cm-bg-elevated)",
+        border: `1px solid ${open ? pill.color + "40" : "var(--cm-border-subtle)"}`,
+        animation: `cm-fade-up 0.35s ease ${idx * 40}ms both`,
+      }}>
+      <span className="text-xs font-bold" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-text-secondary)", fontSize: "0.6rem" }}>
+        {pill.label}
       </span>
+      <span className="text-xs font-black" style={{ fontFamily: "var(--cm-font-mono)", color: pill.color, fontSize: "0.65rem" }}>
+        {pill.value}
+      </span>
+    </button>
+  );
+}
+
+// ── Trade setup card ──────────────────────────────────────────────────────────
+function TradeSetupCard({ setup, bias }: { setup: NonNullable<AnalysisRecord["result"]>["tradeSetup"]; bias: MarketBias }) {
+  const recColor = {
+    buy:  "var(--cm-bullish)",
+    sell: "var(--cm-bearish)",
+    wait: "var(--cm-neutral)",
+  }[setup.type];
+  const recBg = {
+    buy:  "var(--cm-bullish-dim)",
+    sell: "var(--cm-bearish-dim)",
+    wait: "var(--cm-neutral-dim)",
+  }[setup.type];
+
+  function fmt(n: number | null | undefined) {
+    if (n == null) return "—";
+    return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
+  }
+
+  return (
+    <div className="rounded-xl overflow-hidden"
+      style={{ border: "1px solid var(--cm-border-default)", borderLeft: `3px solid ${recColor}` }}>
+      <div className="px-3 py-3 flex flex-col gap-3" style={{ background: "var(--cm-bg-elevated)" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider"
+              style={{ fontFamily: "var(--cm-font-display)", color: "var(--cm-text-secondary)", fontSize: "0.6rem" }}>
+              TRADE SETUP
+            </span>
+            <span className="text-xs font-black px-2 py-0.5 rounded-full"
+              style={{ background: recBg, color: recColor, fontFamily: "var(--cm-font-display)", fontSize: "0.65rem", letterSpacing: "0.08em" }}>
+              ▸ {setup.type.toUpperCase()}
+            </span>
+          </div>
+          {setup.riskRewardRatio > 0 && (
+            <span className="text-sm font-black" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-purple)" }}>
+              {setup.riskRewardRatio.toFixed(1)}R
+            </span>
+          )}
+        </div>
+
+        {setup.type !== "wait" ? (
+          <>
+            {/* Entry zone range */}
+            <div className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wider" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.55rem" }}>
+                ENTRY ZONE
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-sm" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-text-primary)" }}>
+                  {fmt(setup.entryZone.low)}
+                </span>
+                <div className="flex-1 h-1.5 rounded-full" style={{ background: `linear-gradient(90deg, ${recColor}40, ${recColor})` }} />
+                <span className="font-black text-sm" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-text-primary)" }}>
+                  {fmt(setup.entryZone.high)}
+                </span>
+              </div>
+            </div>
+
+            {/* SL */}
+            <div className="flex items-center justify-between py-1.5 border-t"
+              style={{ borderColor: "var(--cm-border-subtle)" }}>
+              <div>
+                <span className="text-xs uppercase tracking-wider" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.55rem" }}>
+                  STOP LOSS
+                </span>
+                <p className="text-xs mt-0.5" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)" }}>
+                  {setup.stopLossRationale}
+                </p>
+              </div>
+              <span className="font-black text-sm ml-3 flex-shrink-0" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-bearish)" }}>
+                {fmt(setup.stopLoss)}
+              </span>
+            </div>
+
+            {/* TPs */}
+            {setup.takeProfits.length > 0 && (
+              <div className="flex flex-col gap-1.5 pt-0.5">
+                {setup.takeProfits.slice(0, 3).map((tp, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                        style={{ fontFamily: "var(--cm-font-display)", background: "var(--cm-bullish-dim)", color: "var(--cm-bullish)", fontSize: "0.6rem" }}>
+                        {tp.label}
+                      </span>
+                      {tp.rationale && (
+                        <span className="text-xs" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)" }}>
+                          {tp.rationale}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-sm" style={{ fontFamily: "var(--cm-font-mono)", color: `hsl(${142 + i * 10}, 100%, ${45 + i * 5}%)` }}>
+                      {fmt(tp.level)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs leading-relaxed" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)" }}>
+            {setup.rationale}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
 
-function formatPrice(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
-}
-
-export function AnalysisCard({ analysis }: AnalysisCardProps) {
+// ── Main card ─────────────────────────────────────────────────────────────────
+export function AnalysisCard({ analysis }: { analysis: AnalysisRecord }) {
   const r = analysis.result;
   if (!r) return null;
 
@@ -84,156 +198,144 @@ export function AnalysisCard({ analysis }: AnalysisCardProps) {
   const stoch = r.indicators.stochastic;
   const ma = r.indicators.movingAverages;
 
+  const biasColor = {
+    bullish: "var(--cm-bullish)",
+    bearish: "var(--cm-bearish)",
+    neutral: "var(--cm-neutral)",
+  }[r.marketBias] ?? "var(--cm-neutral)";
+  const biasBg = {
+    bullish: "var(--cm-bullish-dim)",
+    bearish: "var(--cm-bearish-dim)",
+    neutral: "var(--cm-neutral-dim)",
+  }[r.marketBias] ?? "var(--cm-neutral-dim)";
+  const biasIcon = { bullish: "▲", bearish: "▼", neutral: "→" }[r.marketBias] ?? "→";
+
+  // Indicator pills
+  const pills: PillData[] = [
+    {
+      label: "RSI",
+      value: `${rsi.value.toFixed(1)} ${rsi.zone === "bullish" || rsi.zone === "oversold" ? "▲" : rsi.zone === "bearish" || rsi.zone === "overbought" ? "▼" : "→"}`,
+      color: rsi.zone === "bullish" || rsi.zone === "oversold" ? "var(--cm-bullish)"
+        : rsi.zone === "bearish" || rsi.zone === "overbought" ? "var(--cm-bearish)"
+        : "var(--cm-neutral)",
+      bg: rsi.zone === "bullish" || rsi.zone === "oversold" ? "var(--cm-bullish-dim)"
+        : rsi.zone === "bearish" || rsi.zone === "overbought" ? "var(--cm-bearish-dim)"
+        : "var(--cm-neutral-dim)",
+    },
+    {
+      label: "STOCH",
+      value: `${stoch.kValue.toFixed(0)}/${stoch.dValue.toFixed(0)} ${stoch.zone === "oversold" ? "▲" : stoch.zone === "overbought" ? "▼" : "→"}`,
+      color: stoch.zone === "oversold" ? "var(--cm-bullish)" : stoch.zone === "overbought" ? "var(--cm-bearish)" : "var(--cm-neutral)",
+      bg: stoch.zone === "oversold" ? "var(--cm-bullish-dim)" : stoch.zone === "overbought" ? "var(--cm-bearish-dim)" : "var(--cm-neutral-dim)",
+    },
+    {
+      label: "MA",
+      value: ma.crossoverType === "golden" ? "GOLDEN ✕" : ma.crossoverType === "death" ? "DEATH ✕" : "NO CROSS",
+      color: ma.crossoverType === "golden" ? "var(--cm-bullish)" : ma.crossoverType === "death" ? "var(--cm-bearish)" : "var(--cm-neutral)",
+      bg: ma.crossoverType === "golden" ? "var(--cm-bullish-dim)" : ma.crossoverType === "death" ? "var(--cm-bearish-dim)" : "var(--cm-neutral-dim)",
+    },
+    {
+      label: "TREND",
+      value: r.structure.trend === "uptrend" ? "UP ▲▲" : r.structure.trend === "downtrend" ? "DOWN ▼▼" : "SIDE →",
+      color: r.structure.trend === "uptrend" ? "var(--cm-bullish)" : r.structure.trend === "downtrend" ? "var(--cm-bearish)" : "var(--cm-neutral)",
+      bg: r.structure.trend === "uptrend" ? "var(--cm-bullish-dim)" : r.structure.trend === "downtrend" ? "var(--cm-bearish-dim)" : "var(--cm-neutral-dim)",
+    },
+  ];
+
   return (
-    <div className="cm-fade-in flex flex-col gap-5 rounded-2xl p-4"
-      style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
+    <div className="cm-fade-in flex flex-col gap-4 rounded-2xl overflow-hidden"
+      style={{ background: "var(--cm-bg-surface)", border: "1px solid var(--cm-border-default)", borderTop: `2px solid ${biasColor}` }}>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <BiasChip bias={r.marketBias} />
-          <span className="text-xs font-bold px-2 py-0.5 rounded-md"
-            style={{ background: "hsl(var(--secondary))", color: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono, monospace)" }}>
-            {analysis.timeframe}
-          </span>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Confidence</span>
-          <div style={{ width: "120px" }}>
-            <ConfidenceBar value={r.confidence} />
+      {/* ── Header ── */}
+      <div className="px-4 pt-4 flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-black px-2.5 py-1 rounded-full border"
+              style={{ background: biasBg, color: biasColor, borderColor: biasColor + "40", fontFamily: "var(--cm-font-display)", fontSize: "0.7rem", letterSpacing: "0.06em" }}>
+              {biasIcon} {r.marketBias.toUpperCase()}
+            </span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-lg"
+              style={{ background: "var(--cm-bg-elevated)", color: "var(--cm-purple)", fontFamily: "var(--cm-font-mono)", border: "1px solid var(--cm-border-default)" }}>
+              {analysis.timeframe}
+            </span>
           </div>
-        </div>
-      </div>
-
-      {/* Reasoning */}
-      <p className="text-sm leading-relaxed" style={{ color: "hsl(var(--foreground))" }}>
-        {r.reasoning}
-      </p>
-
-      {/* Indicators */}
-      <Section title="Indicators">
-        <Row label="RSI" value={`${rsi.value.toFixed(1)} — ${rsi.zone}`}
-          valueStyle={{
-            fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem",
-            color: rsi.zone === "overbought" ? "var(--cm-bearish)" : rsi.zone === "oversold" ? "var(--cm-bullish)" :
-              rsi.zone === "bullish" ? "var(--cm-bullish)" : rsi.zone === "bearish" ? "var(--cm-bearish)" : "hsl(var(--muted-foreground))",
-          }} />
-        <Row label="Stochastic K/D" value={`${stoch.kValue.toFixed(0)} / ${stoch.dValue.toFixed(0)} — ${stoch.zone}`}
-          valueStyle={{
-            fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem",
-            color: stoch.zone === "overbought" ? "var(--cm-bearish)" : stoch.zone === "oversold" ? "var(--cm-bullish)" : "hsl(var(--muted-foreground))",
-          }} />
-        <Row label="MA Crossover" value={ma.crossoverType === "none" ? "None" : ma.crossoverType === "golden" ? "Golden Cross" : "Death Cross"}
-          valueStyle={{
-            fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem",
-            color: ma.crossoverType === "golden" ? "var(--cm-bullish)" : ma.crossoverType === "death" ? "var(--cm-bearish)" : "hsl(var(--muted-foreground))",
-          }} />
-        <Row label="Price vs MAs" value={`${ma.priceAboveFast ? "↑" : "↓"} Fast  ${ma.priceAboveSlow ? "↑" : "↓"} Slow`}
-          valueStyle={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "hsl(var(--foreground))" }} />
-      </Section>
-
-      {/* Structure */}
-      <Section title="Market Structure">
-        <Row label="Trend" value={r.structure.trend}
-          valueStyle={{
-            fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem",
-            color: r.structure.trend === "uptrend" ? "var(--cm-bullish)" : r.structure.trend === "downtrend" ? "var(--cm-bearish)" : "hsl(var(--muted-foreground))",
-          }} />
-        <Row label="Momentum" value={`${r.momentum.strength} ${r.momentum.type}`}
-          valueStyle={{ fontFamily: "var(--font-mono, monospace)", fontSize: "0.75rem", color: "hsl(var(--foreground))" }} />
-        <Row label="Support" value={formatPrice(r.supportResistance.nearestSupport)} />
-        <Row label="Resistance" value={formatPrice(r.supportResistance.nearestResistance)} />
-      </Section>
-
-      {/* Trade Setup */}
-      <Section title="Trade Setup">
-        <div className="rounded-xl p-3 flex flex-col gap-2.5"
-          style={{ background: "hsl(var(--secondary))", border: "1px solid hsl(var(--border))" }}>
-          <div className="flex items-center justify-between">
-            <SetupChip type={setup.type} />
-            {setup.riskRewardRatio > 0 && (
-              <span className="text-xs font-bold" style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--cm-accent)" }}>
-                R:R {setup.riskRewardRatio.toFixed(1)}
-              </span>
-            )}
-          </div>
-
-          {setup.type !== "wait" && (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Entry Zone</span>
-                  <span className="text-xs font-bold" style={{ fontFamily: "var(--font-mono, monospace)", color: "hsl(var(--foreground))" }}>
-                    {formatPrice(setup.entryZone.low)} – {formatPrice(setup.entryZone.high)}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Stop Loss</span>
-                  <span className="text-xs font-bold" style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--cm-bearish)" }}>
-                    {formatPrice(setup.stopLoss)}
-                  </span>
-                </div>
-              </div>
-
-              {setup.takeProfits.length > 0 && (
-                <div className="flex flex-col gap-1">
-                  {setup.takeProfits.map((tp, i) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>{tp.label}</span>
-                      <span className="text-xs font-bold" style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--cm-bullish)" }}>
-                        {formatPrice(tp.level)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          <p className="text-xs leading-relaxed" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {setup.rationale}
+          <p className="text-xs" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)" }}>
+            {analysis.aiModel === "mock" ? "Demo analysis" : "GPT-4o vision"}
           </p>
         </div>
-      </Section>
+        <ConfidenceRing value={r.confidence} />
+      </div>
 
-      {/* Confidence Factors */}
+      {/* ── Indicator pills (horizontal scroll) ── */}
+      <div className="flex gap-2 overflow-x-auto px-4 pb-1 no-scrollbar"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        {pills.map((p, i) => <IndicatorPill key={p.label} pill={p} idx={i} />)}
+      </div>
+
+      {/* ── Reasoning ── */}
+      <div className="px-4">
+        <p className="text-sm leading-relaxed" style={{ color: "var(--cm-text-primary)", fontFamily: "var(--cm-font-body)" }}>
+          {r.reasoning}
+        </p>
+      </div>
+
+      {/* ── Key levels ── */}
+      <div className="px-4 grid grid-cols-3 gap-2">
+        {[
+          { label: "KEY LEVEL",   value: r.structure.keyLevel },
+          { label: "SUPPORT",     value: r.supportResistance.nearestSupport },
+          { label: "RESISTANCE",  value: r.supportResistance.nearestResistance },
+        ].map(({ label, value }) => (
+          <div key={label} className="flex flex-col gap-0.5 rounded-xl p-2.5"
+            style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-subtle)" }}>
+            <span style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.5rem", letterSpacing: "0.08em", fontWeight: 700 }}>
+              {label}
+            </span>
+            <span className="text-xs font-black" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-text-primary)" }}>
+              {value?.toLocaleString(undefined, { maximumFractionDigits: 5 }) ?? "—"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Trade setup ── */}
+      <div className="px-4">
+        <TradeSetupCard setup={setup} bias={r.marketBias} />
+      </div>
+
+      {/* ── Confidence factors ── */}
       {r.confidenceFactors.length > 0 && (
-        <Section title="Confidence Factors">
+        <div className="px-4 flex flex-col gap-1.5">
+          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-display)", fontSize: "0.6rem" }}>
+            Signals
+          </span>
           <div className="flex flex-col gap-1">
             {r.confidenceFactors.map((f, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span style={{ color: "var(--cm-accent)", marginTop: "2px", fontSize: "0.6rem" }}>◆</span>
-                <span className="text-xs leading-relaxed" style={{ color: "hsl(var(--foreground))" }}>{f}</span>
+                <span style={{ color: "var(--cm-purple)", fontSize: "0.55rem", marginTop: "3px", flexShrink: 0 }}>◆</span>
+                <span className="text-xs" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)", lineHeight: 1.5 }}>{f}</span>
               </div>
             ))}
           </div>
-        </Section>
+        </div>
       )}
 
-      {/* Warnings */}
+      {/* ── Warnings ── */}
       {r.warnings.length > 0 && (
-        <div className="rounded-lg p-3 flex flex-col gap-1.5"
-          style={{ background: "rgba(245, 166, 35, 0.06)", border: "1px solid rgba(245, 166, 35, 0.2)" }}>
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--cm-accent)" }}>Warnings</span>
+        <div className="mx-4 rounded-xl px-3 py-2.5 flex flex-col gap-1"
+          style={{ background: "rgba(245,166,35,0.06)", border: "1px solid rgba(245,166,35,0.18)" }}>
           {r.warnings.map((w, i) => (
-            <p key={i} className="text-xs leading-relaxed" style={{ color: "hsl(var(--muted-foreground))" }}>• {w}</p>
+            <p key={i} className="text-xs" style={{ color: "var(--cm-amber)", fontFamily: "var(--cm-font-body)" }}>⚡ {w}</p>
           ))}
         </div>
       )}
 
-      {/* Invalidation */}
-      {r.invalidationConditions.length > 0 && (
-        <Section title="Invalidation">
-          {r.invalidationConditions.map((c, i) => (
-            <p key={i} className="text-xs leading-relaxed" style={{ color: "hsl(var(--muted-foreground))" }}>• {c}</p>
-          ))}
-        </Section>
-      )}
-
-      {/* Footer */}
-      <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.5 }}>
-        This is AI-generated analysis, not financial advice. Always do your own research.
-      </p>
+      {/* ── Footer ── */}
+      <div className="px-4 pb-4">
+        <p className="text-xs text-center" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)" }}>
+          AI-generated analysis — not financial advice
+        </p>
+      </div>
     </div>
   );
 }

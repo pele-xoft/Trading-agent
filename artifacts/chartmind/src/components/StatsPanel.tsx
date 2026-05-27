@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 const TIMEFRAME_ORDER = ["5m", "15m", "1h", "4h", "1D"];
 
 interface StatsData {
@@ -17,34 +19,65 @@ interface StatsData {
   isMockMode?: boolean;
 }
 
-interface StatsPanelProps {
-  stats: StatsData;
+function useCountUp(to: number, duration = 1000): number {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    let frame: number;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setVal(Math.round(to * ease));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [to, duration]);
+  return val;
+}
+
+function StatChip({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-xl p-3 cm-stagger-1"
+      style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-default)" }}>
+      <span style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.55rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        {label}
+      </span>
+      <span className="text-2xl font-black leading-tight"
+        style={{ fontFamily: "var(--cm-font-mono)", color: color ?? "var(--cm-text-primary)" }}>
+        {value}
+      </span>
+      {sub && <span style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)", fontSize: "0.6rem" }}>{sub}</span>}
+    </div>
+  );
 }
 
 function SpendBar({ label, spent, limit, color }: { label: string; spent: number; limit: number; color: string }) {
   const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
   const danger = pct >= 80;
   const barColor = danger ? "var(--cm-bearish)" : color;
+
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold" style={{ color: "hsl(var(--muted-foreground))" }}>{label}</span>
+        <span className="text-xs font-bold" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-display)", fontSize: "0.6rem", letterSpacing: "0.06em" }}>
+          {label}
+        </span>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-bold" style={{ fontFamily: "var(--font-mono, monospace)", color: barColor }}>
+          <span className="font-black text-xs" style={{ fontFamily: "var(--cm-font-mono)", color: barColor }}>
             ${spent.toFixed(4)}
           </span>
-          <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
+          <span className="text-xs" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-mono)" }}>
             / ${limit.toFixed(2)}
           </span>
         </div>
       </div>
-      <div className="h-2 rounded-full overflow-hidden" style={{ background: "hsl(var(--border))" }}>
-        <div className="h-full rounded-full transition-all duration-700"
-          style={{ width: `${pct}%`, background: barColor }} />
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+        <div className="h-full rounded-full cm-bar-scale"
+          style={{ width: `${pct}%`, background: barColor, filter: `drop-shadow(0 0 4px ${barColor}50)` }} />
       </div>
-      <p className="text-xs" style={{ color: danger ? "var(--cm-bearish)" : "hsl(var(--muted-foreground))", opacity: danger ? 1 : 0.6 }}>
-        {pct < 1 ? "No spend yet" : `${pct.toFixed(1)}% of limit used`}
-        {danger && " — approaching limit"}
+      <p className="text-xs" style={{ color: danger ? "var(--cm-bearish)" : "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)", fontSize: "0.6rem" }}>
+        {pct < 1 ? "No spend yet" : `${pct.toFixed(1)}% used`}{danger ? " — approaching limit" : ""}
       </p>
     </div>
   );
@@ -55,39 +88,44 @@ function BiasBar({ label, count, total, color }: { label: string; count: number;
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider" style={{ color }}>{label}</span>
+        <span className="text-xs font-black uppercase tracking-wider" style={{ color, fontFamily: "var(--cm-font-display)", fontSize: "0.6rem" }}>
+          {label}
+        </span>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold" style={{ color, fontFamily: "var(--font-mono, monospace)" }}>{pct}%</span>
-          <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono, monospace)" }}>({count})</span>
+          <span className="text-sm font-black" style={{ color, fontFamily: "var(--cm-font-mono)" }}>{pct}%</span>
+          <span className="text-xs" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-mono)" }}>({count})</span>
         </div>
       </div>
-      <div className="h-2 rounded-full overflow-hidden" style={{ background: "hsl(var(--border))" }}>
-        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color, opacity: 0.85 }} />
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+        <div className="h-full rounded-full cm-bar-scale"
+          style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}60, ${color})` }} />
       </div>
     </div>
   );
 }
 
-function StatChip({ label, value, sub, valueColor }: { label: string; value: string; sub?: string; valueColor?: string }) {
+function CacheBar({ hits, total }: { hits: number; total: number }) {
+  const pct = total > 0 ? Math.round((hits / total) * 100) : 0;
   return (
-    <div className="flex flex-col gap-0.5 rounded-xl p-3"
-      style={{ background: "hsl(var(--secondary))", border: "1px solid hsl(var(--border))" }}>
-      <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>{label}</span>
-      <span className="text-lg font-black leading-tight"
-        style={{ fontFamily: "var(--font-mono, monospace)", color: valueColor ?? "hsl(var(--foreground))" }}>
-        {value}
-      </span>
-      {sub && <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>{sub}</span>}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-display)", fontSize: "0.6rem", letterSpacing: "0.06em" }}>
+          CACHE HIT RATE
+        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-black text-xs" style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-cyan)" }}>{pct}%</span>
+          <span className="text-xs" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)" }}>saves money</span>
+        </div>
+      </div>
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+        <div className="h-full rounded-full cm-bar-scale"
+          style={{ width: `${pct}%`, background: "linear-gradient(90deg, var(--cm-cyan)60, var(--cm-cyan))" }} />
+      </div>
     </div>
   );
 }
 
-export function StatsPanel({ stats }: StatsPanelProps) {
-  const timeframeSorted = TIMEFRAME_ORDER
-    .map((tf) => stats.byTimeframe.find((b) => b.timeframe === tf))
-    .filter(Boolean) as { timeframe: string; count: number }[];
-  const maxTfCount = Math.max(...timeframeSorted.map((b) => b.count), 1);
-
+export function StatsPanel({ stats }: { stats: StatsData }) {
   const isMock = stats.isMockMode ?? true;
   const dailyLimit = stats.dailyLimitUsd ?? 2;
   const monthlyLimit = stats.monthlyLimitUsd ?? 10;
@@ -95,104 +133,122 @@ export function StatsPanel({ stats }: StatsPanelProps) {
   const monthSpend = stats.monthlyCostUsd ?? 0;
   const cacheHits = stats.cacheHits ?? 0;
   const avgCost = stats.avgCostPerAnalysis ?? 0;
+  const totalDisplayed = useCountUp(stats.total);
+  const confDisplayed = useCountUp(stats.avgConfidence);
+
+  const timeframeSorted = TIMEFRAME_ORDER
+    .map(tf => stats.byTimeframe.find(b => b.timeframe === tf))
+    .filter(Boolean) as { timeframe: string; count: number }[];
+  const maxTfCount = Math.max(...timeframeSorted.map(b => b.count), 1);
 
   if (stats.total === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 gap-3">
-        <span className="text-3xl">📊</span>
-        <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>No data yet</p>
-        <p className="text-xs text-center max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-          Analyze your first chart to see stats here.
-        </p>
+      <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+        <div className="w-20 h-20 rounded-2xl flex items-center justify-center"
+          style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-default)" }}>
+          <span className="text-4xl">📊</span>
+        </div>
+        <div>
+          <p className="text-sm font-bold" style={{ fontFamily: "var(--cm-font-display)", color: "var(--cm-text-primary)" }}>No data yet</p>
+          <p className="text-xs mt-1" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)" }}>
+            Analyse your first chart to see stats here.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-5 cm-fade-in">
+    <div className="flex flex-col gap-4 cm-fade-in">
 
-      {/* Mode badge */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+      {/* ── Mode badge ── */}
+      <div className="flex items-center justify-between px-3 py-2.5 rounded-xl"
         style={{
-          background: isMock ? "rgba(245,166,35,0.08)" : "rgba(34,197,94,0.08)",
-          border: `1px solid ${isMock ? "rgba(245,166,35,0.25)" : "rgba(34,197,94,0.25)"}`,
+          background: isMock ? "rgba(245,166,35,0.06)" : "rgba(0,230,118,0.06)",
+          border: `1px solid ${isMock ? "rgba(245,166,35,0.2)" : "rgba(0,230,118,0.2)"}`,
         }}>
-        <span className="text-sm">{isMock ? "⚡" : "🟢"}</span>
-        <div className="flex flex-col">
-          <span className="text-xs font-bold" style={{ color: isMock ? "var(--cm-accent)" : "var(--cm-bullish)" }}>
-            {isMock ? "Demo Mode" : "Live Mode"}
-          </span>
-          <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {isMock ? "Analyses are simulated — no API cost" : "Using GPT-4o mini vision"}
-          </span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full cm-pulse-dot"
+            style={{ background: isMock ? "var(--cm-amber)" : "var(--cm-bullish)" }} />
+          <div className="flex flex-col">
+            <span className="text-xs font-black" style={{ fontFamily: "var(--cm-font-display)", color: isMock ? "var(--cm-amber)" : "var(--cm-bullish)", fontSize: "0.7rem" }}>
+              {isMock ? "DEMO MODE" : "LIVE MODE"}
+            </span>
+            <span className="text-xs" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)", fontSize: "0.6rem" }}>
+              {isMock ? "Analyses are simulated — no API cost" : "Using GPT-4o mini vision · $0.001/analysis"}
+            </span>
+          </div>
         </div>
+        <span className="text-xs font-bold px-2 py-0.5 rounded-md"
+          style={{ background: "var(--cm-purple-dim)", color: "var(--cm-purple)", fontFamily: "var(--cm-font-mono)", fontSize: "0.6rem" }}>
+          GPT-4o-mini
+        </span>
       </div>
 
-      {/* Cost spend bars (only show in live mode or if there's any spend) */}
-      {(!isMock || todaySpend > 0 || monthSpend > 0) && (
-        <div className="rounded-xl p-4 flex flex-col gap-4"
-          style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>
-            API Spend
-          </span>
-          <SpendBar label="Today" spent={todaySpend} limit={dailyLimit} color="var(--cm-accent)" />
-          <SpendBar label="This Month" spent={monthSpend} limit={monthlyLimit} color="var(--cm-neutral)" />
-        </div>
-      )}
-
-      {/* Quick stats grid */}
+      {/* ── Stats grid ── */}
       <div className="grid grid-cols-2 gap-2">
-        <StatChip label="Total Analyses" value={String(stats.total)} />
+        <StatChip label="This Month" value={`$${monthSpend.toFixed(3)}`} sub="API spend" color="var(--cm-purple)" />
+        <StatChip label="Analyses" value={totalDisplayed} sub="total runs" />
         <StatChip
           label="Avg Confidence"
-          value={`${stats.avgConfidence}%`}
-          valueColor={stats.avgConfidence >= 70 ? "var(--cm-bullish)" : stats.avgConfidence >= 50 ? "var(--cm-accent)" : "var(--cm-bearish)"}
-        />
-        <StatChip
-          label="Cache Hits"
-          value={String(cacheHits)}
-          sub="Same image reused"
-          valueColor={cacheHits > 0 ? "var(--cm-bullish)" : undefined}
+          value={`${confDisplayed}%`}
+          color={stats.avgConfidence >= 70 ? "var(--cm-bullish)" : stats.avgConfidence >= 50 ? "var(--cm-amber)" : "var(--cm-bearish)"}
         />
         <StatChip
           label="Avg Cost"
           value={isMock ? "$0.000" : `$${avgCost.toFixed(4)}`}
-          sub="Per analysis"
-          valueColor="var(--cm-accent)"
+          sub="per analysis"
+          color="var(--cm-cyan)"
         />
       </div>
 
-      {/* Bias breakdown */}
+      {/* ── Budget bars ── */}
+      {(!isMock || todaySpend > 0 || monthSpend > 0) && (
+        <div className="rounded-xl p-4 flex flex-col gap-4"
+          style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-default)" }}>
+          <span className="text-xs font-black uppercase tracking-wider"
+            style={{ fontFamily: "var(--cm-font-display)", color: "var(--cm-text-secondary)", fontSize: "0.6rem" }}>
+            API BUDGET
+          </span>
+          <SpendBar label="DAILY" spent={todaySpend} limit={dailyLimit} color="var(--cm-purple)" />
+          <SpendBar label="MONTHLY" spent={monthSpend} limit={monthlyLimit} color="var(--cm-cyan)" />
+          {stats.total > 0 && <CacheBar hits={cacheHits} total={stats.total} />}
+        </div>
+      )}
+
+      {/* ── Bias breakdown ── */}
       <div className="rounded-xl p-4 flex flex-col gap-4"
-        style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
-        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>
-          Market Bias
+        style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-default)" }}>
+        <span className="text-xs font-black uppercase tracking-wider"
+          style={{ fontFamily: "var(--cm-font-display)", color: "var(--cm-text-secondary)", fontSize: "0.6rem" }}>
+          MARKET BIAS BREAKDOWN
         </span>
         <BiasBar label="Bullish" count={stats.bullish} total={stats.total} color="var(--cm-bullish)" />
         <BiasBar label="Bearish" count={stats.bearish} total={stats.total} color="var(--cm-bearish)" />
         <BiasBar label="Neutral" count={stats.neutral} total={stats.total} color="var(--cm-neutral)" />
       </div>
 
-      {/* Timeframe breakdown */}
+      {/* ── Timeframe breakdown ── */}
       {timeframeSorted.length > 0 && (
         <div className="rounded-xl p-4 flex flex-col gap-3"
-          style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>
-            By Timeframe
+          style={{ background: "var(--cm-bg-elevated)", border: "1px solid var(--cm-border-default)" }}>
+          <span className="text-xs font-black uppercase tracking-wider"
+            style={{ fontFamily: "var(--cm-font-display)", color: "var(--cm-text-secondary)", fontSize: "0.6rem" }}>
+            BY TIMEFRAME
           </span>
           {timeframeSorted.map((b) => {
             const pct = Math.round((b.count / maxTfCount) * 100);
             return (
-              <div key={b.timeframe} className="flex items-center gap-2">
-                <span className="text-xs font-bold w-8 text-right"
-                  style={{ fontFamily: "var(--font-mono, monospace)", color: "hsl(var(--muted-foreground))" }}>
+              <div key={b.timeframe} className="flex items-center gap-2.5">
+                <span className="text-xs font-black w-8 text-right"
+                  style={{ fontFamily: "var(--cm-font-mono)", color: "var(--cm-text-secondary)", fontSize: "0.65rem" }}>
                   {b.timeframe}
                 </span>
-                <div className="flex-1 h-5 rounded overflow-hidden relative" style={{ background: "hsl(var(--border))" }}>
-                  <div className="h-full rounded transition-all duration-700"
-                    style={{ width: `${pct}%`, background: "var(--cm-accent)", opacity: 0.7 }} />
-                  <span className="absolute inset-0 flex items-center pl-2 text-xs font-bold"
-                    style={{ fontFamily: "var(--font-mono, monospace)", color: pct > 30 ? "#0a0a0f" : "hsl(var(--muted-foreground))" }}>
+                <div className="flex-1 h-6 rounded-lg overflow-hidden relative" style={{ background: "rgba(255,255,255,0.04)" }}>
+                  <div className="h-full rounded-lg cm-bar-scale"
+                    style={{ width: `${pct}%`, background: "linear-gradient(90deg, var(--cm-purple)60, var(--cm-purple))" }} />
+                  <span className="absolute inset-0 flex items-center pl-2.5 text-xs font-black"
+                    style={{ fontFamily: "var(--cm-font-mono)", color: pct > 35 ? "rgba(255,255,255,0.9)" : "var(--cm-text-secondary)", fontSize: "0.65rem" }}>
                     {b.count}
                   </span>
                 </div>
@@ -202,7 +258,7 @@ export function StatsPanel({ stats }: StatsPanelProps) {
         </div>
       )}
 
-      <p className="text-xs text-center pb-2" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.4 }}>
+      <p className="text-xs text-center pb-2" style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-body)", opacity: 0.4 }}>
         Stats update after each analysis
       </p>
     </div>
