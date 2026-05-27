@@ -1,12 +1,44 @@
 import { Router } from "express";
 import { db, analysesTable } from "@workspace/db";
-import { desc, eq, count } from "drizzle-orm";
+import { desc, eq, count, sum, gte, and } from "drizzle-orm";
 import { analyzeChart } from "../lib/ai.service.js";
+import { hashImage, getCachedResult, cacheResult, getCacheHits } from "../lib/cache.js";
 
 const router = Router();
 
 const SUPPORTED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const TIMEFRAMES = ["5m", "15m", "1h", "4h", "1D"];
+
+const DAILY_LIMIT_USD = 2.00;
+const MONTHLY_LIMIT_USD = 10.00;
+const COST_PER_LIVE_ANALYSIS = 0.001;
+
+const IS_MOCK_MODE =
+  process.env.MOCK_MODE === "true" ||
+  process.env.OPENAI_API_KEY === "mock" ||
+  !process.env.OPENAI_API_KEY;
+
+function startOfDay() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function startOfMonth() {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// GET /api/analyses/config
+router.get("/config", (_req, res) => {
+  res.json({
+    isMockMode: IS_MOCK_MODE,
+    dailyLimitUsd: DAILY_LIMIT_USD,
+    monthlyLimitUsd: MONTHLY_LIMIT_USD,
+    costPerAnalysisUsd: IS_MOCK_MODE ? 0 : COST_PER_LIVE_ANALYSIS,
+  });
+});
 
 // POST /api/analyses — run analysis
 router.post("/", async (req, res) => {
@@ -33,8 +65,50 @@ router.post("/", async (req, res) => {
     }
 
     const estimatedBytes = (imageBase64.length * 3) / 4;
-    if (estimatedBytes > 10 * 1024 * 1024) {
-      return res.status(413).json({ error: "Image exceeds 10MB limit" });
+    if (estimatedBytes > 15 * 1024 * 1024) {
+      return res.status(413).json({ error: "Image exceeds 15MB limit" });
+    }
+
+    // --- Daily cost limit check (live mode only) ---
+    if (!IS_MOCK_MODE) {
+      const [{ value: todaySpend }] = await db
+        .select({ value: sum(analysesTable.costUsd) })
+        .from(analysesTable)
+        .where(gte(analysesTable.createdAt, startOfDay()));
+      if (Number(todaySpend ?? 0) >= DAILY_LIMIT_USD) {
+        return res.status(429).json({
+          error: `Daily analysis limit reached ($${DAILY_LIMIT_USD.toFixed(2)}). Resets at midnight.`,
+          code: "DAILY_LIMIT_REACHED",
+        });
+      }
+    }
+
+    // --- Cache check ---
+    const imageHash = hashImage(imageBase64);
+    const cached = getCachedResult(imageHash);
+    if (cached) {
+      const [record] = await db.insert(analysesTable).values({
+        status: "complete",
+        timeframe,
+        imageUrl,
+        promptVersion: "1.0.0",
+        aiModel: "cache",
+        processingTimeMs: 0,
+        result: cached as Record<string, unknown>,
+        costUsd: 0,
+        cacheHit: true,
+      }).returning();
+
+      return res.status(201).json({
+        id: record.id,
+        timeframe: record.timeframe,
+        imageUrl: record.imageUrl,
+        result: record.result,
+        promptVersion: record.promptVersion,
+        createdAt: record.createdAt.toISOString(),
+        cached: true,
+        costUsd: 0,
+      });
     }
 
     const { instrument } = req.body as { instrument?: string };
@@ -46,6 +120,11 @@ router.post("/", async (req, res) => {
       instrument,
     });
 
+    const isMockResult = model === "mock" || model === "mock-fallback";
+    const costUsd = isMockResult ? 0 : COST_PER_LIVE_ANALYSIS;
+
+    cacheResult(imageHash, result);
+
     const [record] = await db.insert(analysesTable).values({
       status: "complete",
       timeframe,
@@ -55,6 +134,8 @@ router.post("/", async (req, res) => {
       aiModel: model,
       processingTimeMs,
       result,
+      costUsd,
+      cacheHit: false,
     }).returning();
 
     return res.status(201).json({
@@ -64,6 +145,8 @@ router.post("/", async (req, res) => {
       result: record.result,
       promptVersion: record.promptVersion,
       createdAt: record.createdAt.toISOString(),
+      cached: false,
+      costUsd,
     });
   } catch (err) {
     req.log.error({ err }, "Analysis failed");
@@ -92,6 +175,8 @@ router.get("/", async (req, res) => {
         result: r.result,
         promptVersion: r.promptVersion,
         createdAt: r.createdAt.toISOString(),
+        cached: r.cacheHit,
+        costUsd: r.costUsd,
       })),
       total: Number(total),
       page,
@@ -106,9 +191,17 @@ router.get("/", async (req, res) => {
 // GET /api/analyses/stats
 router.get("/stats", async (req, res) => {
   try {
-    const rows = await db.select().from(analysesTable).orderBy(desc(analysesTable.createdAt));
+    const [rows, todaySpendRows, monthSpendRows] = await Promise.all([
+      db.select().from(analysesTable).orderBy(desc(analysesTable.createdAt)),
+      db.select({ value: sum(analysesTable.costUsd) })
+        .from(analysesTable)
+        .where(gte(analysesTable.createdAt, startOfDay())),
+      db.select({ value: sum(analysesTable.costUsd) })
+        .from(analysesTable)
+        .where(gte(analysesTable.createdAt, startOfMonth())),
+    ]);
 
-    let bullish = 0, bearish = 0, neutral = 0, totalConf = 0, confCount = 0;
+    let bullish = 0, bearish = 0, neutral = 0, totalConf = 0, confCount = 0, totalCost = 0;
     const byTimeframe: Record<string, number> = {};
 
     for (const r of rows) {
@@ -121,7 +214,12 @@ router.get("/stats", async (req, res) => {
         if (typeof result.confidence === "number") { totalConf += result.confidence; confCount++; }
       }
       byTimeframe[r.timeframe] = (byTimeframe[r.timeframe] ?? 0) + 1;
+      totalCost += r.costUsd ?? 0;
     }
+
+    const todayCostUsd = Number(todaySpendRows[0]?.value ?? 0);
+    const monthlyCostUsd = Number(monthSpendRows[0]?.value ?? 0);
+    const liveCount = rows.filter(r => !r.cacheHit && r.costUsd > 0).length;
 
     return res.json({
       total: rows.length,
@@ -130,6 +228,14 @@ router.get("/stats", async (req, res) => {
       neutral,
       avgConfidence: confCount > 0 ? Math.round(totalConf / confCount) : 0,
       byTimeframe: Object.entries(byTimeframe).map(([timeframe, cnt]) => ({ timeframe, count: cnt })),
+      todayCostUsd: Math.round(todayCostUsd * 100000) / 100000,
+      monthlyCostUsd: Math.round(monthlyCostUsd * 100000) / 100000,
+      totalCostUsd: Math.round(totalCost * 100000) / 100000,
+      dailyLimitUsd: DAILY_LIMIT_USD,
+      monthlyLimitUsd: MONTHLY_LIMIT_USD,
+      avgCostPerAnalysis: liveCount > 0 ? Math.round((totalCost / liveCount) * 100000) / 100000 : 0,
+      cacheHits: getCacheHits(),
+      isMockMode: IS_MOCK_MODE,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get stats");
@@ -153,6 +259,8 @@ router.get("/:id", async (req, res) => {
       result: row.result,
       promptVersion: row.promptVersion,
       createdAt: row.createdAt.toISOString(),
+      cached: row.cacheHit,
+      costUsd: row.costUsd,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get analysis");

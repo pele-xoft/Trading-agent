@@ -11,6 +11,7 @@ const TIMEFRAMES: { value: Timeframe; label: string }[] = [
 
 const MAX_PX = 1024;
 const JPEG_QUALITY = 0.82;
+const COST_PER_ANALYSIS = 0.001;
 
 function resizeImage(dataUrl: string): Promise<{ dataUrl: string; originalKB: number; resizedKB: number }> {
   return new Promise((resolve, reject) => {
@@ -18,19 +19,17 @@ function resizeImage(dataUrl: string): Promise<{ dataUrl: string; originalKB: nu
     img.onload = () => {
       const originalKB = Math.round(dataUrl.length * 0.75 / 1024);
       const { naturalWidth: w, naturalHeight: h } = img;
-      const scale = w > h ? MAX_PX / w : MAX_PX / h;
-      const newW = scale < 1 ? Math.round(w * scale) : w;
-      const newH = scale < 1 ? Math.round(h * scale) : h;
+      const scale = Math.min(1, MAX_PX / Math.max(w, h));
+      const newW = Math.round(w * scale);
+      const newH = Math.round(h * scale);
 
       const canvas = document.createElement("canvas");
       canvas.width = newW;
       canvas.height = newH;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, newW, newH);
+      canvas.getContext("2d")!.drawImage(img, 0, 0, newW, newH);
 
       const resized = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-      const resizedKB = Math.round(resized.length * 0.75 / 1024);
-      resolve({ dataUrl: resized, originalKB, resizedKB });
+      resolve({ dataUrl: resized, originalKB, resizedKB: Math.round(resized.length * 0.75 / 1024) });
     };
     img.onerror = reject;
     img.src = dataUrl;
@@ -40,9 +39,10 @@ function resizeImage(dataUrl: string): Promise<{ dataUrl: string; originalKB: nu
 interface UploadComponentProps {
   onAnalyze: (imageDataUrl: string, timeframe: Timeframe) => void;
   isAnalyzing: boolean;
+  isMockMode: boolean;
 }
 
-export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps) {
+export function UploadComponent({ onAnalyze, isAnalyzing, isMockMode }: UploadComponentProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>("1h");
   const [preview, setPreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -56,16 +56,14 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
     setFileName(file.name);
     setIsResizing(true);
     setSizeInfo(null);
-
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const raw = e.target?.result as string;
       try {
-        const { dataUrl, originalKB, resizedKB } = await resizeImage(raw);
+        const { dataUrl, originalKB, resizedKB } = await resizeImage(e.target?.result as string);
         setPreview(dataUrl);
         setSizeInfo({ originalKB, resizedKB });
       } catch {
-        setPreview(raw);
+        setPreview(e.target?.result as string);
       } finally {
         setIsResizing(false);
       }
@@ -79,16 +77,6 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, [handleFile]);
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-  };
-
-  const handleAnalyze = () => {
-    if (!preview) return;
-    onAnalyze(preview, selectedTimeframe);
-  };
 
   const handleClear = () => {
     setPreview(null);
@@ -118,7 +106,7 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
           ref={fileInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          onChange={handleFileInput}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
           className="hidden"
         />
 
@@ -126,27 +114,20 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
           <div className="flex flex-col items-center justify-center p-8 gap-3 select-none" style={{ minHeight: "180px" }}>
             <div className="cm-spin w-7 h-7 border-2 rounded-full"
               style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
-            <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Optimising image...</p>
+            <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Compressing image...</p>
           </div>
         ) : preview ? (
           <div className="relative">
-            <img
-              src={preview}
-              alt="Chart preview"
-              className="w-full object-contain rounded-xl"
-              style={{ maxHeight: "260px" }}
-            />
+            <img src={preview} alt="Chart preview" className="w-full object-contain rounded-xl" style={{ maxHeight: "260px" }} />
             <button
               onClick={(e) => { e.stopPropagation(); handleClear(); }}
               className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
               style={{ background: "rgba(0,0,0,0.7)", color: "hsl(var(--foreground))" }}
-            >
-              ✕
-            </button>
+            >✕</button>
             {sizeInfo && savings > 0 && (
               <div className="absolute bottom-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
-                style={{ background: "rgba(0,0,0,0.75)", color: "var(--cm-bullish)" }}>
-                <span>↓ {savings}% smaller</span>
+                style={{ background: "rgba(0,0,0,0.78)" }}>
+                <span style={{ color: "var(--cm-bullish)" }}>↓ {savings}% smaller</span>
                 <span style={{ color: "hsl(var(--muted-foreground))", opacity: 0.7 }}>
                   {sizeInfo.originalKB}KB → {sizeInfo.resizedKB}KB
                 </span>
@@ -156,16 +137,10 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
         ) : (
           <div className="flex flex-col items-center justify-center p-8 gap-3 select-none">
             <div className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
-              style={{ background: "var(--cm-accent-dim)" }}>
-              📈
-            </div>
+              style={{ background: "var(--cm-accent-dim)" }}>📈</div>
             <div className="text-center">
-              <p className="font-semibold text-sm" style={{ color: "hsl(var(--foreground))" }}>
-                Drop your chart here
-              </p>
-              <p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>
-                or tap to select • PNG, JPG, WebP
-              </p>
+              <p className="font-semibold text-sm" style={{ color: "hsl(var(--foreground))" }}>Drop your chart here</p>
+              <p className="text-xs mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>or tap to select • PNG, JPG, WebP</p>
             </div>
           </div>
         )}
@@ -173,8 +148,7 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
 
       {/* Timeframe selector */}
       <div className="flex flex-col gap-2">
-        <label className="text-xs font-semibold uppercase tracking-wider"
-          style={{ color: "hsl(var(--muted-foreground))" }}>
+        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "hsl(var(--muted-foreground))" }}>
           Timeframe
         </label>
         <div className="grid grid-cols-5 gap-1.5">
@@ -189,39 +163,43 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
                 border: `1px solid ${selectedTimeframe === value ? "var(--cm-accent)" : "hsl(var(--border))"}`,
                 fontFamily: "var(--font-mono, monospace)",
               }}
-            >
-              {label}
-            </button>
+            >{label}</button>
           ))}
         </div>
       </div>
 
-      {/* Analyze button */}
-      <button
-        onClick={handleAnalyze}
-        disabled={!preview || isAnalyzing || isResizing}
-        className="relative w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 overflow-hidden"
-        style={{
-          background: !preview || isAnalyzing || isResizing
-            ? "hsl(var(--muted))"
-            : "var(--cm-accent)",
-          color: !preview || isAnalyzing || isResizing
-            ? "hsl(var(--muted-foreground))"
-            : "#0a0a0f",
-          cursor: !preview || isAnalyzing || isResizing ? "not-allowed" : "pointer",
-          opacity: !preview ? 0.5 : 1,
-        }}
-      >
-        {isAnalyzing ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="cm-spin inline-block w-4 h-4 border-2 rounded-full"
-              style={{ borderColor: "hsl(var(--muted-foreground))", borderTopColor: "transparent" }} />
-            Analyzing chart...
-          </span>
-        ) : (
-          "Analyze Chart"
+      {/* Analyze button + cost estimate */}
+      <div className="flex flex-col gap-1.5">
+        <button
+          onClick={() => preview && onAnalyze(preview, selectedTimeframe)}
+          disabled={!preview || isAnalyzing || isResizing}
+          className="relative w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200"
+          style={{
+            background: !preview || isAnalyzing || isResizing ? "hsl(var(--muted))" : "var(--cm-accent)",
+            color: !preview || isAnalyzing || isResizing ? "hsl(var(--muted-foreground))" : "#0a0a0f",
+            cursor: !preview || isAnalyzing || isResizing ? "not-allowed" : "pointer",
+            opacity: !preview ? 0.5 : 1,
+          }}
+        >
+          {isAnalyzing ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="cm-spin inline-block w-4 h-4 border-2 rounded-full"
+                style={{ borderColor: "hsl(var(--muted-foreground))", borderTopColor: "transparent" }} />
+              Analyzing chart...
+            </span>
+          ) : "Analyze Chart"}
+        </button>
+
+        {/* Cost estimate line */}
+        {preview && !isAnalyzing && (
+          <p className="text-center text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+            {isMockMode
+              ? <span style={{ color: "hsl(var(--muted-foreground))" }}>Demo mode — no API cost</span>
+              : <span>Est. cost: <span style={{ color: "var(--cm-accent)", fontFamily: "var(--font-mono, monospace)" }}>~${COST_PER_ANALYSIS.toFixed(3)}</span></span>
+            }
+          </p>
         )}
-      </button>
+      </div>
     </div>
   );
 }

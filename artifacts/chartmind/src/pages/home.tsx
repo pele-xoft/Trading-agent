@@ -8,6 +8,12 @@ import type { AnalysisRecord, Timeframe } from "../types";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
 
+async function fetchConfig() {
+  const res = await fetch(`${API_BASE}/analyses/config`);
+  if (!res.ok) return { isMockMode: true, dailyLimitUsd: 2, monthlyLimitUsd: 10, costPerAnalysisUsd: 0 };
+  return res.json();
+}
+
 async function fetchAnalyses(): Promise<AnalysisRecord[]> {
   const res = await fetch(`${API_BASE}/analyses?limit=30`);
   if (!res.ok) throw new Error("Failed to load history");
@@ -50,15 +56,11 @@ export default function Home() {
 
   const queryClient = useQueryClient();
 
-  const historyQuery = useQuery({
-    queryKey: ["analyses"],
-    queryFn: fetchAnalyses,
-  });
+  const configQuery = useQuery({ queryKey: ["config"], queryFn: fetchConfig, staleTime: Infinity });
+  const isMockMode: boolean = configQuery.data?.isMockMode ?? true;
 
-  const statsQuery = useQuery({
-    queryKey: ["analyses-stats"],
-    queryFn: fetchStats,
-  });
+  const historyQuery = useQuery({ queryKey: ["analyses"], queryFn: fetchAnalyses });
+  const statsQuery = useQuery({ queryKey: ["analyses-stats"], queryFn: fetchStats });
 
   const analyzeMutation = useMutation({
     mutationFn: runAnalysis,
@@ -86,21 +88,26 @@ export default function Home() {
 
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: "hsl(var(--background))", maxWidth: "480px", margin: "0 auto" }}>
+
+      {/* Mock mode banner */}
+      {isMockMode && (
+        <div className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold"
+          style={{ background: "rgba(245, 166, 35, 0.12)", borderBottom: "1px solid rgba(245, 166, 35, 0.25)", color: "var(--cm-accent)" }}>
+          <span>⚡</span>
+          <span>Demo Mode — analyses are simulated, no API cost</span>
+        </div>
+      )}
+
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-4 border-b"
-        style={{ borderColor: "hsl(var(--border))" }}>
+      <header className="flex items-center justify-between px-4 py-4 border-b" style={{ borderColor: "hsl(var(--border))" }}>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black"
-            style={{ background: "var(--cm-accent)", color: "#0a0a0f" }}>
-            CM
-          </div>
-          <span className="font-bold text-base tracking-tight" style={{ color: "hsl(var(--foreground))" }}>
-            ChartMind
-          </span>
+            style={{ background: "var(--cm-accent)", color: "#0a0a0f" }}>CM</div>
+          <span className="font-bold text-base tracking-tight" style={{ color: "hsl(var(--foreground))" }}>ChartMind</span>
         </div>
         <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
           style={{ background: "var(--cm-accent-dim)", color: "var(--cm-accent)" }}>
-          GPT-4o Vision
+          {isMockMode ? "Demo Mode" : "GPT-4o Vision"}
         </span>
       </header>
 
@@ -111,9 +118,7 @@ export default function Home() {
             key={id}
             onClick={() => setActiveTab(id)}
             className="py-3 px-1 mr-5 text-sm font-semibold relative transition-colors"
-            style={{
-              color: activeTab === id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
-            }}
+            style={{ color: activeTab === id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
           >
             {label}
             {id === "history" && (historyQuery.data?.length ?? 0) > 0 && (
@@ -145,6 +150,7 @@ export default function Home() {
             <UploadComponent
               onAnalyze={handleAnalyze}
               isAnalyzing={analyzeMutation.isPending}
+              isMockMode={isMockMode}
             />
 
             {errorMsg && (
@@ -158,11 +164,9 @@ export default function Home() {
               <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
                 <div className="cm-spin w-8 h-8 border-2 rounded-full"
                   style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
-                <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>
-                  AI is reading your chart...
-                </p>
+                <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>AI is reading your chart...</p>
                 <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
-                  This takes 5–15 seconds
+                  {isMockMode ? "Simulating analysis..." : "This takes 5–15 seconds"}
                 </p>
               </div>
             )}
@@ -174,9 +178,7 @@ export default function Home() {
             {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
               <div className="flex flex-col items-center gap-3 py-8 text-center">
                 <div className="text-3xl">🧠</div>
-                <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-                  AI-powered chart analysis
-                </p>
+                <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>AI-powered chart analysis</p>
                 <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
                   Upload a chart screenshot and get instant technical analysis — RSI, Stochastic, MAs, structure, and trade setups.
                 </p>
@@ -195,11 +197,7 @@ export default function Home() {
               </div>
             )}
             {historyQuery.data && (
-              <HistoryList
-                analyses={historyQuery.data}
-                onSelect={handleSelectHistory}
-                selectedId={selectedId}
-              />
+              <HistoryList analyses={historyQuery.data} onSelect={handleSelectHistory} selectedId={selectedId} />
             )}
           </>
         )}

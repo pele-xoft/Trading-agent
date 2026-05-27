@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, doublePrecision, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -16,6 +16,8 @@ export const analysesTable = pgTable("analyses", {
   result: jsonb("result"),
   errorMessage: text("error_message"),
   sessionId: text("session_id"),
+  costUsd: doublePrecision("cost_usd").notNull().default(0),
+  cacheHit: boolean("cache_hit").notNull().default(false),
 });
 
 export const insertAnalysisSchema = createInsertSchema(analysesTable).omit({ id: true, createdAt: true, updatedAt: true });
