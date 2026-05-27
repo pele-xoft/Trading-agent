@@ -1,12 +1,16 @@
 import OpenAI from "openai";
 import { buildAnalysisPrompt, PROMPT_VERSION } from "./prompt-builder.js";
 import { computeCompositeSignal, blendConfidence } from "./indicator-engine.js";
+import { getMockAnalysis } from "./mock-analysis.js";
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY is required");
-}
+const isMockMode =
+  process.env.NEXT_PUBLIC_MOCK_MODE === "true" ||
+  process.env.OPENAI_API_KEY === "mock" ||
+  !process.env.OPENAI_API_KEY;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = isMockMode
+  ? null
+  : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export const AI_MODEL = "gpt-4o-mini";
 
@@ -19,6 +23,18 @@ export async function analyzeChart(params: {
   instrument?: string;
 }): Promise<{ result: Record<string, unknown>; processingTimeMs: number; promptVersion: string; model: string }> {
   const start = Date.now();
+
+  if (isMockMode) {
+    // Simulate a realistic delay
+    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
+    const result = getMockAnalysis() as Record<string, unknown>;
+    return {
+      result,
+      processingTimeMs: Date.now() - start,
+      promptVersion: PROMPT_VERSION,
+      model: "mock",
+    };
+  }
 
   const systemPrompt = buildAnalysisPrompt(params.timeframe);
   const instrumentText = params.instrument ? ` of ${params.instrument}` : "";
@@ -35,7 +51,7 @@ Read carefully:
 
 Be precise with price levels. If a value is hard to read exactly, estimate conservatively and add a warning.`;
 
-  const response = await openai.chat.completions.create({
+  const response = await openai!.chat.completions.create({
     model: AI_MODEL,
     max_tokens: 2048,
     temperature: 0.1,
@@ -59,7 +75,6 @@ Be precise with price levels. If a value is hard to read exactly, estimate conse
 
   const result = parseAndValidate(rawText);
 
-  // Blend AI confidence with rule-based engine
   const composite = computeCompositeSignal(result as Parameters<typeof computeCompositeSignal>[0]);
   result.confidence = blendConfidence(result.confidence as number, composite.confidence);
 

@@ -33,3 +33,8 @@ externalPort = 80
 
 [nix]
 packages = ["unzipNLS"]
+
+[userenv]
+
+[userenv.shared]
+NEXT_PUBLIC_MOCK_MODE = "true"
