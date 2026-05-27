@@ -9,6 +9,34 @@ const TIMEFRAMES: { value: Timeframe; label: string }[] = [
   { value: "1D", label: "1D" },
 ];
 
+const MAX_PX = 1024;
+const JPEG_QUALITY = 0.82;
+
+function resizeImage(dataUrl: string): Promise<{ dataUrl: string; originalKB: number; resizedKB: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const originalKB = Math.round(dataUrl.length * 0.75 / 1024);
+      const { naturalWidth: w, naturalHeight: h } = img;
+      const scale = w > h ? MAX_PX / w : MAX_PX / h;
+      const newW = scale < 1 ? Math.round(w * scale) : w;
+      const newH = scale < 1 ? Math.round(h * scale) : h;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = newW;
+      canvas.height = newH;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, newW, newH);
+
+      const resized = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+      const resizedKB = Math.round(resized.length * 0.75 / 1024);
+      resolve({ dataUrl: resized, originalKB, resizedKB });
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
 interface UploadComponentProps {
   onAnalyze: (imageDataUrl: string, timeframe: Timeframe) => void;
   isAnalyzing: boolean;
@@ -19,15 +47,28 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
   const [preview, setPreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [sizeInfo, setSizeInfo] = useState<{ originalKB: number; resizedKB: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = useCallback((file: File) => {
+  const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) return;
     setFileName(file.name);
+    setIsResizing(true);
+    setSizeInfo(null);
+
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      setPreview(dataUrl);
+    reader.onload = async (e) => {
+      const raw = e.target?.result as string;
+      try {
+        const { dataUrl, originalKB, resizedKB } = await resizeImage(raw);
+        setPreview(dataUrl);
+        setSizeInfo({ originalKB, resizedKB });
+      } catch {
+        setPreview(raw);
+      } finally {
+        setIsResizing(false);
+      }
     };
     reader.readAsDataURL(file);
   }, []);
@@ -52,8 +93,11 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
   const handleClear = () => {
     setPreview(null);
     setFileName(null);
+    setSizeInfo(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
+
+  const savings = sizeInfo ? Math.round((1 - sizeInfo.resizedKB / sizeInfo.originalKB) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -62,7 +106,7 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onClick={() => !preview && fileInputRef.current?.click()}
+        onClick={() => !preview && !isResizing && fileInputRef.current?.click()}
         className="relative rounded-xl border-2 border-dashed transition-all duration-200 overflow-hidden cursor-pointer"
         style={{
           borderColor: isDragging ? "var(--cm-accent)" : "hsl(var(--border))",
@@ -78,7 +122,13 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
           className="hidden"
         />
 
-        {preview ? (
+        {isResizing ? (
+          <div className="flex flex-col items-center justify-center p-8 gap-3 select-none" style={{ minHeight: "180px" }}>
+            <div className="cm-spin w-7 h-7 border-2 rounded-full"
+              style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
+            <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>Optimising image...</p>
+          </div>
+        ) : preview ? (
           <div className="relative">
             <img
               src={preview}
@@ -88,15 +138,18 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
             />
             <button
               onClick={(e) => { e.stopPropagation(); handleClear(); }}
-              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-opacity"
+              className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
               style={{ background: "rgba(0,0,0,0.7)", color: "hsl(var(--foreground))" }}
             >
               ✕
             </button>
-            {fileName && (
-              <div className="absolute bottom-2 left-2 right-8 text-xs truncate px-2 py-1 rounded-md"
-                style={{ background: "rgba(0,0,0,0.7)", color: "hsl(var(--muted-foreground))" }}>
-                {fileName}
+            {sizeInfo && savings > 0 && (
+              <div className="absolute bottom-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs"
+                style={{ background: "rgba(0,0,0,0.75)", color: "var(--cm-bullish)" }}>
+                <span>↓ {savings}% smaller</span>
+                <span style={{ color: "hsl(var(--muted-foreground))", opacity: 0.7 }}>
+                  {sizeInfo.originalKB}KB → {sizeInfo.resizedKB}KB
+                </span>
               </div>
             )}
           </div>
@@ -146,16 +199,16 @@ export function UploadComponent({ onAnalyze, isAnalyzing }: UploadComponentProps
       {/* Analyze button */}
       <button
         onClick={handleAnalyze}
-        disabled={!preview || isAnalyzing}
+        disabled={!preview || isAnalyzing || isResizing}
         className="relative w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 overflow-hidden"
         style={{
-          background: !preview || isAnalyzing
+          background: !preview || isAnalyzing || isResizing
             ? "hsl(var(--muted))"
             : "var(--cm-accent)",
-          color: !preview || isAnalyzing
+          color: !preview || isAnalyzing || isResizing
             ? "hsl(var(--muted-foreground))"
             : "#0a0a0f",
-          cursor: !preview || isAnalyzing ? "not-allowed" : "pointer",
+          cursor: !preview || isAnalyzing || isResizing ? "not-allowed" : "pointer",
           opacity: !preview ? 0.5 : 1,
         }}
       >
