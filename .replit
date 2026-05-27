@@ -31,6 +31,10 @@ externalPort = 8081
 localPort = 21944
 externalPort = 80
 
+[[ports]]
+localPort = 22776
+externalPort = 3000
+
 [nix]
 packages = ["unzipNLS"]
 
