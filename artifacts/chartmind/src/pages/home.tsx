@@ -4,6 +4,8 @@ import { UploadComponent } from "../components/UploadComponent";
 import { AnalysisCard } from "../components/AnalysisCard";
 import { HistoryList } from "../components/HistoryList";
 import { StatsPanel } from "../components/StatsPanel";
+import { MultiChartUpload, CONFLUENCE_TIMEFRAMES, type ConfluenceTimeframe, type ChartSlot } from "../components/MultiChartUpload";
+import { ConfluenceCard } from "../components/ConfluenceCard";
 import type { AnalysisRecord, Timeframe } from "../types";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`;
@@ -40,7 +42,21 @@ async function runAnalysis(payload: { imageUrl: string; timeframe: Timeframe }):
   return res.json();
 }
 
+async function runConfluence(charts: Array<{ imageUrl: string; timeframe: string }>) {
+  const res = await fetch(`${API_BASE}/confluence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ charts }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Confluence failed" }));
+    throw new Error(err.error ?? "Confluence analysis failed");
+  }
+  return res.json();
+}
+
 type Tab = "analyze" | "history" | "stats";
+type AnalyzeMode = "single" | "multi";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "analyze", label: "Analyze" },
@@ -48,9 +64,16 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "stats", label: "Stats" },
 ];
 
+function initSlots(): ChartSlot[] {
+  return CONFLUENCE_TIMEFRAMES.map(tf => ({ timeframe: tf, imageDataUrl: null, kb: null }));
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("analyze");
+  const [analyzeMode, setAnalyzeMode] = useState<AnalyzeMode>("single");
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisRecord | null>(null);
+  const [confluenceResult, setConfluenceResult] = useState<unknown>(null);
+  const [slots, setSlots] = useState<ChartSlot[]>(initSlots);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -70,9 +93,18 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ["analyses"] });
       queryClient.invalidateQueries({ queryKey: ["analyses-stats"] });
     },
-    onError: (err) => {
-      setErrorMsg(err instanceof Error ? err.message : "Analysis failed");
+    onError: (err) => setErrorMsg(err instanceof Error ? err.message : "Analysis failed"),
+  });
+
+  const confluenceMutation = useMutation({
+    mutationFn: runConfluence,
+    onSuccess: (data) => {
+      setConfluenceResult(data);
+      setErrorMsg(null);
+      queryClient.invalidateQueries({ queryKey: ["analyses"] });
+      queryClient.invalidateQueries({ queryKey: ["analyses-stats"] });
     },
+    onError: (err) => setErrorMsg(err instanceof Error ? err.message : "Confluence failed"),
   });
 
   const handleAnalyze = useCallback((imageDataUrl: string, timeframe: Timeframe) => {
@@ -80,11 +112,38 @@ export default function Home() {
     analyzeMutation.mutate({ imageUrl: imageDataUrl, timeframe });
   }, [analyzeMutation]);
 
+  const handleConfluenceAnalyze = useCallback(() => {
+    const filled = slots.filter(s => s.imageDataUrl !== null);
+    if (filled.length < 2) return;
+    setErrorMsg(null);
+    setConfluenceResult(null);
+    const charts = filled.map(s => ({ imageUrl: s.imageDataUrl!, timeframe: s.timeframe }));
+    confluenceMutation.mutate(charts);
+  }, [slots, confluenceMutation]);
+
+  const handleSlotUpload = useCallback((tf: ConfluenceTimeframe, dataUrl: string, kb: number) => {
+    setSlots(prev => prev.map(s => s.timeframe === tf ? { ...s, imageDataUrl: dataUrl, kb } : s));
+    setConfluenceResult(null);
+  }, []);
+
+  const handleSlotClear = useCallback((tf: ConfluenceTimeframe) => {
+    setSlots(prev => prev.map(s => s.timeframe === tf ? { ...s, imageDataUrl: null, kb: null } : s));
+    setConfluenceResult(null);
+  }, []);
+
+  const handleModeSwitch = (mode: AnalyzeMode) => {
+    setAnalyzeMode(mode);
+    setErrorMsg(null);
+  };
+
   const handleSelectHistory = useCallback((a: AnalysisRecord) => {
     setSelectedId(a.id);
     setCurrentAnalysis(a);
     setActiveTab("analyze");
+    setAnalyzeMode("single");
   }, []);
+
+  const isAnalyzing = analyzeMutation.isPending || confluenceMutation.isPending;
 
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: "hsl(var(--background))", maxWidth: "480px", margin: "0 auto" }}>
@@ -147,12 +206,24 @@ export default function Home() {
         {/* ANALYZE TAB */}
         {activeTab === "analyze" && (
           <>
-            <UploadComponent
-              onAnalyze={handleAnalyze}
-              isAnalyzing={analyzeMutation.isPending}
-              isMockMode={isMockMode}
-            />
+            {/* Mode toggle */}
+            <div className="flex rounded-xl p-1 gap-1" style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
+              {(["single", "multi"] as AnalyzeMode[]).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => handleModeSwitch(mode)}
+                  className="flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-150"
+                  style={{
+                    background: analyzeMode === mode ? "var(--cm-accent)" : "transparent",
+                    color: analyzeMode === mode ? "#0a0a0f" : "hsl(var(--muted-foreground))",
+                  }}
+                >
+                  {mode === "single" ? "Single Chart" : "Multi-TF Confluence"}
+                </button>
+              ))}
+            </div>
 
+            {/* Error message */}
             {errorMsg && (
               <div className="rounded-xl px-4 py-3 text-sm cm-fade-in"
                 style={{ background: "var(--cm-bearish-dim)", color: "var(--cm-bearish)", border: "1px solid var(--cm-bearish)" }}>
@@ -160,29 +231,81 @@ export default function Home() {
               </div>
             )}
 
-            {analyzeMutation.isPending && (
-              <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
-                <div className="cm-spin w-8 h-8 border-2 rounded-full"
-                  style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
-                <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>AI is reading your chart...</p>
-                <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
-                  {isMockMode ? "Simulating analysis..." : "This takes 5–15 seconds"}
-                </p>
-              </div>
+            {/* SINGLE MODE */}
+            {analyzeMode === "single" && (
+              <>
+                <UploadComponent
+                  onAnalyze={handleAnalyze}
+                  isAnalyzing={analyzeMutation.isPending}
+                  isMockMode={isMockMode}
+                />
+
+                {analyzeMutation.isPending && (
+                  <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
+                    <div className="cm-spin w-8 h-8 border-2 rounded-full"
+                      style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
+                    <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>AI is reading your chart...</p>
+                    <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
+                      {isMockMode ? "Simulating analysis..." : "This takes 5–15 seconds"}
+                    </p>
+                  </div>
+                )}
+
+                {currentAnalysis && !analyzeMutation.isPending && (
+                  <AnalysisCard analysis={currentAnalysis} />
+                )}
+
+                {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
+                  <div className="flex flex-col items-center gap-3 py-8 text-center">
+                    <div className="text-3xl">🧠</div>
+                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>AI-powered chart analysis</p>
+                    <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      Upload a chart screenshot and get instant technical analysis — RSI, Stochastic, MAs, structure, and trade setups.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
 
-            {currentAnalysis && !analyzeMutation.isPending && (
-              <AnalysisCard analysis={currentAnalysis} />
-            )}
+            {/* MULTI-TF CONFLUENCE MODE */}
+            {analyzeMode === "multi" && (
+              <>
+                <MultiChartUpload
+                  slots={slots}
+                  onUpload={handleSlotUpload}
+                  onClear={handleSlotClear}
+                  onAnalyze={handleConfluenceAnalyze}
+                  isAnalyzing={confluenceMutation.isPending}
+                  isMockMode={isMockMode}
+                />
 
-            {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
-              <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <div className="text-3xl">🧠</div>
-                <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>AI-powered chart analysis</p>
-                <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-                  Upload a chart screenshot and get instant technical analysis — RSI, Stochastic, MAs, structure, and trade setups.
-                </p>
-              </div>
+                {confluenceMutation.isPending && (
+                  <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
+                    <div className="cm-spin w-8 h-8 border-2 rounded-full"
+                      style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
+                    <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      Analysing {slots.filter(s => s.imageDataUrl).length} timeframes in parallel...
+                    </p>
+                    <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
+                      {isMockMode ? "Simulating confluence..." : "This may take 15–30 seconds"}
+                    </p>
+                  </div>
+                )}
+
+                {confluenceResult && !confluenceMutation.isPending && (
+                  <ConfluenceCard data={confluenceResult as Parameters<typeof ConfluenceCard>[0]["data"]} />
+                )}
+
+                {!confluenceResult && !confluenceMutation.isPending && !errorMsg && slots.every(s => !s.imageDataUrl) && (
+                  <div className="flex flex-col items-center gap-3 py-6 text-center">
+                    <div className="text-3xl">📊</div>
+                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>Top-down alignment check</p>
+                    <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      Upload your 15m, 1h, 4h and 1D charts. ChartMind checks whether all timeframes agree on direction before you place a trade.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
