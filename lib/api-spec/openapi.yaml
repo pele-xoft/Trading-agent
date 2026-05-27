@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ChartMind API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: analyses
+    description: Chart analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,140 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /analyses:
+    get:
+      operationId: listAnalyses
+      tags: [analyses]
+      summary: List analyses
+      description: Returns paginated analysis history
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of analyses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisList"
+    post:
+      operationId: createAnalysis
+      tags: [analyses]
+      summary: Analyze a chart
+      description: Runs the full analysis pipeline on an uploaded chart image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisInput"
+      responses:
+        "201":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /analyses/{id}:
+    get:
+      operationId: getAnalysis
+      tags: [analyses]
+      summary: Get a single analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteAnalysis
+      tags: [analyses]
+      summary: Delete an analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /analyses/stats:
+    get:
+      operationId: getAnalysisStats
+      tags: [analyses]
+      summary: Get analysis statistics
+      description: Returns aggregate stats for the dashboard
+      responses:
+        "200":
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisStats"
+
+  /upload:
+    post:
+      operationId: uploadChart
+      tags: [analyses]
+      summary: Upload a chart image
+      description: Uploads an image and returns a reference URL for use in analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "200":
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +170,316 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Timeframe:
+      type: string
+      enum: [5m, 15m, 1h, 4h, 1D]
+
+    MarketBias:
+      type: string
+      enum: [bullish, bearish, neutral]
+
+    TradeType:
+      type: string
+      enum: [buy, sell, wait]
+
+    TrendDirection:
+      type: string
+      enum: [uptrend, downtrend, ranging]
+
+    CrossoverType:
+      type: string
+      enum: [golden, death, none]
+
+    DivergenceType:
+      type: string
+      enum: [bullish, bearish, none]
+
+    RSIZone:
+      type: string
+      enum: [overbought, oversold, bullish, bearish, neutral]
+
+    StochasticZone:
+      type: string
+      enum: [overbought, oversold, neutral]
+
+    CrossoverSignal:
+      type: string
+      enum: [bullish, bearish, none]
+
+    MomentumType:
+      type: string
+      enum: [continuation, reversal, unclear]
+
+    MomentumStrength:
+      type: string
+      enum: [strong, moderate, weak]
+
+    TakeProfit:
+      type: object
+      properties:
+        level:
+          type: number
+        label:
+          type: string
+        rationale:
+          type: string
+      required: [level, label, rationale]
+
+    EntryZone:
+      type: object
+      properties:
+        low:
+          type: number
+        high:
+          type: number
+      required: [low, high]
+
+    MovingAveragesResult:
+      type: object
+      properties:
+        fastAboveSlow:
+          type: boolean
+        priceAboveFast:
+          type: boolean
+        priceAboveSlow:
+          type: boolean
+        crossoverRecent:
+          type: boolean
+        crossoverType:
+          $ref: "#/components/schemas/CrossoverType"
+        description:
+          type: string
+      required: [fastAboveSlow, priceAboveFast, priceAboveSlow, crossoverRecent, crossoverType, description]
+
+    RSIResult:
+      type: object
+      properties:
+        value:
+          type: number
+        zone:
+          $ref: "#/components/schemas/RSIZone"
+        divergence:
+          $ref: "#/components/schemas/DivergenceType"
+        description:
+          type: string
+      required: [value, zone, divergence, description]
+
+    StochasticResult:
+      type: object
+      properties:
+        kValue:
+          type: number
+        dValue:
+          type: number
+        zone:
+          $ref: "#/components/schemas/StochasticZone"
+        crossover:
+          $ref: "#/components/schemas/CrossoverSignal"
+        divergence:
+          $ref: "#/components/schemas/DivergenceType"
+        description:
+          type: string
+      required: [kValue, dValue, zone, crossover, divergence, description]
+
+    IndicatorsResult:
+      type: object
+      properties:
+        movingAverages:
+          $ref: "#/components/schemas/MovingAveragesResult"
+        rsi:
+          $ref: "#/components/schemas/RSIResult"
+        stochastic:
+          $ref: "#/components/schemas/StochasticResult"
+      required: [movingAverages, rsi, stochastic]
+
+    StructureResult:
+      type: object
+      properties:
+        trend:
+          $ref: "#/components/schemas/TrendDirection"
+        higherHighs:
+          type: boolean
+        lowerLows:
+          type: boolean
+        keyLevel:
+          type: ["number", "null"]
+        description:
+          type: string
+      required: [trend, higherHighs, lowerLows, keyLevel, description]
+
+    SupportResistanceResult:
+      type: object
+      properties:
+        nearestSupport:
+          type: ["number", "null"]
+        nearestResistance:
+          type: ["number", "null"]
+        keyLevels:
+          type: array
+          items:
+            type: number
+        description:
+          type: string
+      required: [nearestSupport, nearestResistance, keyLevels, description]
+
+    MomentumResult:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/MomentumType"
+        strength:
+          $ref: "#/components/schemas/MomentumStrength"
+        description:
+          type: string
+      required: [type, strength, description]
+
+    TradeSetupResult:
+      type: object
+      properties:
+        type:
+          $ref: "#/components/schemas/TradeType"
+        rationale:
+          type: string
+        entryZone:
+          $ref: "#/components/schemas/EntryZone"
+        stopLoss:
+          type: number
+        stopLossRationale:
+          type: string
+        takeProfits:
+          type: array
+          items:
+            $ref: "#/components/schemas/TakeProfit"
+        riskRewardRatio:
+          type: number
+      required: [type, rationale, entryZone, stopLoss, stopLossRationale, takeProfits, riskRewardRatio]
+
+    AnalysisResult:
+      type: object
+      properties:
+        marketBias:
+          $ref: "#/components/schemas/MarketBias"
+        structure:
+          $ref: "#/components/schemas/StructureResult"
+        indicators:
+          $ref: "#/components/schemas/IndicatorsResult"
+        supportResistance:
+          $ref: "#/components/schemas/SupportResistanceResult"
+        momentum:
+          $ref: "#/components/schemas/MomentumResult"
+        tradeSetup:
+          $ref: "#/components/schemas/TradeSetupResult"
+        confidence:
+          type: number
+        confidenceFactors:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+        invalidationConditions:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+      required: [marketBias, structure, indicators, supportResistance, momentum, tradeSetup, confidence, confidenceFactors, reasoning, invalidationConditions, warnings]
+
+    Analysis:
+      type: object
+      properties:
+        id:
+          type: integer
+        timeframe:
+          $ref: "#/components/schemas/Timeframe"
+        imageUrl:
+          type: string
+        result:
+          $ref: "#/components/schemas/AnalysisResult"
+        promptVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, timeframe, imageUrl, result, promptVersion, createdAt]
+
+    AnalysisList:
+      type: object
+      properties:
+        analyses:
+          type: array
+          items:
+            $ref: "#/components/schemas/Analysis"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [analyses, total, page, limit]
+
+    AnalysisStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        bullish:
+          type: integer
+        bearish:
+          type: integer
+        neutral:
+          type: integer
+        avgConfidence:
+          type: number
+        byTimeframe:
+          type: array
+          items:
+            type: object
+            properties:
+              timeframe:
+                type: string
+              count:
+                type: integer
+            required: [timeframe, count]
+      required: [total, bullish, bearish, neutral, avgConfidence, byTimeframe]
+
+    AnalysisInput:
+      type: object
+      properties:
+        imageUrl:
+          type: string
+          description: Base64 data URL or hosted image URL
+        timeframe:
+          $ref: "#/components/schemas/Timeframe"
+      required: [imageUrl, timeframe]
+
+    UploadInput:
+      type: object
+      properties:
+        imageData:
+          type: string
+          description: Base64-encoded image data
+        mimeType:
+          type: string
+          description: Image MIME type (image/jpeg, image/png, image/webp)
+        filename:
+          type: string
+      required: [imageData, mimeType]
+
+    UploadResult:
+      type: object
+      properties:
+        imageUrl:
+          type: string
+          description: The URL to reference the uploaded image in analysis
+      required: [imageUrl]

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
-  status: string;
+export interface UploadResult {
+  /** The URL to reference the uploaded image in analysis */
+  imageUrl: string;
 }
