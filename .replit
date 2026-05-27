@@ -37,4 +37,4 @@ packages = ["unzipNLS"]
 [userenv]
 
 [userenv.shared]
-NEXT_PUBLIC_MOCK_MODE = "true"
+NEXT_PUBLIC_MOCK_MODE = "false"
