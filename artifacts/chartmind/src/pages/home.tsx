@@ -12,15 +12,14 @@ const API_BASE = `${import.meta.env.BASE_URL}api`;
 
 async function fetchConfig() {
   const res = await fetch(`${API_BASE}/analyses/config`);
-  if (!res.ok) return { isMockMode: true, dailyLimitUsd: 2, monthlyLimitUsd: 10, costPerAnalysisUsd: 0 };
+  if (!res.ok) return { isMockMode: true, dailyLimitUsd: 2, monthlyLimitUsd: 10 };
   return res.json();
 }
 
 async function fetchAnalyses(): Promise<AnalysisRecord[]> {
   const res = await fetch(`${API_BASE}/analyses?limit=30`);
   if (!res.ok) throw new Error("Failed to load history");
-  const data = await res.json();
-  return data.analyses ?? [];
+  return (await res.json()).analyses ?? [];
 }
 
 async function fetchStats() {
@@ -56,7 +55,7 @@ async function runConfluence(charts: Array<{ imageUrl: string; timeframe: string
 }
 
 type Tab = "analyze" | "history" | "stats";
-type AnalyzeMode = "single" | "multi";
+type AnalyzeMode = "full" | "quick";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "analyze", label: "Analyze" },
@@ -70,7 +69,7 @@ function initSlots(): ChartSlot[] {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("analyze");
-  const [analyzeMode, setAnalyzeMode] = useState<AnalyzeMode>("single");
+  const [analyzeMode, setAnalyzeMode] = useState<AnalyzeMode>("full");  // Full Analysis is default
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisRecord | null>(null);
   const [confluenceResult, setConfluenceResult] = useState<unknown>(null);
   const [slots, setSlots] = useState<ChartSlot[]>(initSlots);
@@ -117,8 +116,7 @@ export default function Home() {
     if (filled.length < 2) return;
     setErrorMsg(null);
     setConfluenceResult(null);
-    const charts = filled.map(s => ({ imageUrl: s.imageDataUrl!, timeframe: s.timeframe }));
-    confluenceMutation.mutate(charts);
+    confluenceMutation.mutate(filled.map(s => ({ imageUrl: s.imageDataUrl!, timeframe: s.timeframe })));
   }, [slots, confluenceMutation]);
 
   const handleSlotUpload = useCallback((tf: ConfluenceTimeframe, dataUrl: string, kb: number) => {
@@ -140,10 +138,10 @@ export default function Home() {
     setSelectedId(a.id);
     setCurrentAnalysis(a);
     setActiveTab("analyze");
-    setAnalyzeMode("single");
+    setAnalyzeMode("quick");
   }, []);
 
-  const isAnalyzing = analyzeMutation.isPending || confluenceMutation.isPending;
+  const filledCount = slots.filter(s => s.imageDataUrl !== null).length;
 
   return (
     <div className="min-h-dvh flex flex-col" style={{ background: "hsl(var(--background))", maxWidth: "480px", margin: "0 auto" }}>
@@ -173,12 +171,9 @@ export default function Home() {
       {/* Tabs */}
       <div className="flex border-b px-4" style={{ borderColor: "hsl(var(--border))" }}>
         {TABS.map(({ id, label }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
+          <button key={id} onClick={() => setActiveTab(id)}
             className="py-3 px-1 mr-5 text-sm font-semibold relative transition-colors"
-            style={{ color: activeTab === id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
-          >
+            style={{ color: activeTab === id ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}>
             {label}
             {id === "history" && (historyQuery.data?.length ?? 0) > 0 && (
               <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full"
@@ -206,24 +201,34 @@ export default function Home() {
         {/* ANALYZE TAB */}
         {activeTab === "analyze" && (
           <>
-            {/* Mode toggle */}
+            {/* Mode toggle — Full Analysis is the default/prominent option */}
             <div className="flex rounded-xl p-1 gap-1" style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}>
-              {(["single", "multi"] as AnalyzeMode[]).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => handleModeSwitch(mode)}
-                  className="flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-150"
-                  style={{
-                    background: analyzeMode === mode ? "var(--cm-accent)" : "transparent",
-                    color: analyzeMode === mode ? "#0a0a0f" : "hsl(var(--muted-foreground))",
-                  }}
-                >
-                  {mode === "single" ? "Single Chart" : "Multi-TF Confluence"}
-                </button>
-              ))}
+              <button
+                onClick={() => handleModeSwitch("full")}
+                className="flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5"
+                style={{
+                  background: analyzeMode === "full" ? "var(--cm-accent)" : "transparent",
+                  color: analyzeMode === "full" ? "#0a0a0f" : "hsl(var(--muted-foreground))",
+                }}>
+                <span>Full Analysis</span>
+                {analyzeMode === "full" && filledCount > 0 && (
+                  <span className="text-xs px-1.5 rounded-full font-black" style={{ background: "rgba(0,0,0,0.2)" }}>
+                    {filledCount}/4
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => handleModeSwitch("quick")}
+                className="flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-150"
+                style={{
+                  background: analyzeMode === "quick" ? "hsl(var(--secondary))" : "transparent",
+                  color: analyzeMode === "quick" ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+                }}>
+                Quick Analysis
+              </button>
             </div>
 
-            {/* Error message */}
+            {/* Error */}
             {errorMsg && (
               <div className="rounded-xl px-4 py-3 text-sm cm-fade-in"
                 style={{ background: "var(--cm-bearish-dim)", color: "var(--cm-bearish)", border: "1px solid var(--cm-bearish)" }}>
@@ -231,44 +236,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* SINGLE MODE */}
-            {analyzeMode === "single" && (
-              <>
-                <UploadComponent
-                  onAnalyze={handleAnalyze}
-                  isAnalyzing={analyzeMutation.isPending}
-                  isMockMode={isMockMode}
-                />
-
-                {analyzeMutation.isPending && (
-                  <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
-                    <div className="cm-spin w-8 h-8 border-2 rounded-full"
-                      style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
-                    <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>AI is reading your chart...</p>
-                    <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
-                      {isMockMode ? "Simulating analysis..." : "This takes 5–15 seconds"}
-                    </p>
-                  </div>
-                )}
-
-                {currentAnalysis && !analyzeMutation.isPending && (
-                  <AnalysisCard analysis={currentAnalysis} />
-                )}
-
-                {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
-                  <div className="flex flex-col items-center gap-3 py-8 text-center">
-                    <div className="text-3xl">🧠</div>
-                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>AI-powered chart analysis</p>
-                    <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-                      Upload a chart screenshot and get instant technical analysis — RSI, Stochastic, MAs, structure, and trade setups.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* MULTI-TF CONFLUENCE MODE */}
-            {analyzeMode === "multi" && (
+            {/* ── FULL ANALYSIS (Multi-TF Confluence) ── */}
+            {analyzeMode === "full" && (
               <>
                 <MultiChartUpload
                   slots={slots}
@@ -284,10 +253,10 @@ export default function Home() {
                     <div className="cm-spin w-8 h-8 border-2 rounded-full"
                       style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
                     <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>
-                      Analysing {slots.filter(s => s.imageDataUrl).length} timeframes in parallel...
+                      Analysing {filledCount} timeframes in parallel...
                     </p>
                     <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
-                      {isMockMode ? "Simulating confluence..." : "This may take 15–30 seconds"}
+                      {isMockMode ? "Scoring confluence..." : "This may take 20–40 seconds"}
                     </p>
                   </div>
                 )}
@@ -299,9 +268,45 @@ export default function Home() {
                 {!confluenceResult && !confluenceMutation.isPending && !errorMsg && slots.every(s => !s.imageDataUrl) && (
                   <div className="flex flex-col items-center gap-3 py-6 text-center">
                     <div className="text-3xl">📊</div>
-                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>Top-down alignment check</p>
+                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>Multi-timeframe confluence</p>
                     <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-                      Upload your 15m, 1h, 4h and 1D charts. ChartMind checks whether all timeframes agree on direction before you place a trade.
+                      Upload your 15m, 1h, 4h and 1D charts. ChartMind analyses each timeframe individually, applies weighted HTF/LTF scoring, and generates one final trade decision.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── QUICK ANALYSIS (Single Chart) ── */}
+            {analyzeMode === "quick" && (
+              <>
+                <UploadComponent
+                  onAnalyze={handleAnalyze}
+                  isAnalyzing={analyzeMutation.isPending}
+                  isMockMode={isMockMode}
+                />
+
+                {analyzeMutation.isPending && (
+                  <div className="flex flex-col items-center gap-3 py-8 cm-fade-in">
+                    <div className="cm-spin w-8 h-8 border-2 rounded-full"
+                      style={{ borderColor: "hsl(var(--border))", borderTopColor: "var(--cm-accent)" }} />
+                    <p className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>AI is reading your chart...</p>
+                    <p className="text-xs" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
+                      {isMockMode ? "Simulating..." : "5–15 seconds"}
+                    </p>
+                  </div>
+                )}
+
+                {currentAnalysis && !analyzeMutation.isPending && (
+                  <AnalysisCard analysis={currentAnalysis} />
+                )}
+
+                {!currentAnalysis && !analyzeMutation.isPending && !errorMsg && (
+                  <div className="flex flex-col items-center gap-3 py-8 text-center">
+                    <div className="text-3xl">⚡</div>
+                    <p className="text-sm font-semibold" style={{ color: "hsl(var(--foreground))" }}>Quick single-chart analysis</p>
+                    <p className="text-xs leading-relaxed max-w-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      Upload any timeframe for a fast RSI, Stochastic, MA, structure and trade setup read. Use Full Analysis for a proper entry decision.
                     </p>
                   </div>
                 )}
