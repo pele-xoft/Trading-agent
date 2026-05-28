@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/chartmind-mobile/"
+title = "ChartMind Mobile"
+version = "1.0.0"
+id = "artifacts/chartmind-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/chartmind-mobile/" ]
+localPort = 22776
+
+[services.development]
+run = "pnpm --filter @workspace/chartmind-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/chartmind-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/chartmind-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "22776"
+BASE_PATH = "/chartmind-mobile/"

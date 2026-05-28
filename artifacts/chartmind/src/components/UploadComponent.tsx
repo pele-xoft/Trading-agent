@@ -136,7 +136,7 @@ export function UploadComponent({ onAnalyze, isAnalyzing, isMockMode }: UploadCo
                 Drop your chart here
               </p>
               <p className="text-xs mt-1" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)" }}>
-                or tap to select · PNG, JPG, WebP
+                or tap to select · PNG, JPG, WebP · auto-compressed
               </p>
             </div>
           </div>
@@ -175,7 +175,7 @@ export function UploadComponent({ onAnalyze, isAnalyzing, isMockMode }: UploadCo
           className="cm-btn-gradient w-full rounded-xl transition-all duration-200"
           style={{ height: "56px", fontSize: "0.8rem", opacity: canAnalyze ? 1 : 0.4, cursor: canAnalyze ? "pointer" : "not-allowed" }}
         >
-          ANALYZE CHART →
+          {isAnalyzing ? "ANALYZING..." : isResizing ? "COMPRESSING..." : "ANALYZE CHART →"}
         </button>
 
         {preview && !isAnalyzing && (

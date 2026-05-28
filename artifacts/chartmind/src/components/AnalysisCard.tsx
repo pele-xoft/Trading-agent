@@ -6,7 +6,8 @@ const GRADE_CFG: Record<TradeGrade, { color: string; bg: string; border: string;
   "A+": { color: "var(--cm-bullish)", bg: "var(--cm-bullish-dim)", border: "rgba(0,230,118,0.4)", glow: "0 0 12px rgba(0,230,118,0.4)" },
   "A":  { color: "var(--cm-bullish)", bg: "var(--cm-bullish-dim)", border: "rgba(0,230,118,0.25)", glow: "none" },
   "B":  { color: "var(--cm-amber)",   bg: "var(--cm-amber-dim)",   border: "rgba(245,166,35,0.3)",  glow: "none" },
-  "Avoid": { color: "var(--cm-bearish)", bg: "var(--cm-bearish-dim)", border: "rgba(255,61,87,0.3)", glow: "none" },
+  "C":  { color: "var(--cm-neutral)", bg: "var(--cm-neutral-dim)", border: "rgba(148,163,184,0.3)", glow: "none" },
+  "avoid": { color: "var(--cm-bearish)", bg: "var(--cm-bearish-dim)", border: "rgba(255,61,87,0.3)", glow: "none" },
   "WAIT":  { color: "var(--cm-amber)",   bg: "var(--cm-amber-dim)",   border: "rgba(245,166,35,0.25)", glow: "none" },
 };
 
@@ -20,12 +21,13 @@ const REGIME_CFG: Record<string, { label: string; color: string; bg: string; ico
 
 function TradeGradeBadge({ grade }: { grade: TradeGrade }) {
   const cfg = GRADE_CFG[grade] ?? GRADE_CFG["B"];
-  const icon = grade === "A+" ? "★" : grade === "Avoid" ? "✕" : grade === "WAIT" ? "⏸" : "◆";
+  const icon = grade === "A+" ? "★" : grade === "avoid" ? "✕" : grade === "WAIT" ? "⏸" : "◆";
+  const label = grade === "avoid" ? "AVOID" : grade;
   return (
     <div className="flex flex-col items-center gap-0.5">
       <span className="font-black px-2.5 py-1.5 rounded-xl border text-sm"
         style={{ fontFamily: "var(--cm-font-mono)", color: cfg.color, background: cfg.bg, borderColor: cfg.border, boxShadow: cfg.glow, letterSpacing: "0.05em" }}>
-        {icon} {grade}
+        {icon} {label}
       </span>
       <span className="text-xs font-bold uppercase tracking-widest"
         style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.5rem" }}>
@@ -313,7 +315,7 @@ export function AnalysisCard({ analysis }: { analysis: AnalysisRecord }) {
             {r.marketRegime && <MarketRegimeBadge regime={r.marketRegime} />}
           </div>
           <p className="text-xs" style={{ color: "var(--cm-text-secondary)", fontFamily: "var(--cm-font-body)" }}>
-            {analysis.aiModel === "mock" ? "Demo analysis" : "GPT-4o vision"}
+            {["mock", "cache", "mock-fallback"].includes(analysis.aiModel ?? "") ? "Demo analysis" : "GPT-4o vision"}
             {r.alignmentScore != null && r.alignmentScore > 0 && (
               <span style={{ color: "var(--cm-text-muted)" }}> · {r.alignmentScore}% signal alignment</span>
             )}

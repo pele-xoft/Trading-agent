@@ -2,12 +2,10 @@ export type Timeframe = "5m" | "15m" | "1h" | "4h" | "1D";
 export type MarketBias = "bullish" | "bearish" | "neutral";
 export type TradeType = "buy" | "sell" | "wait";
 export type TrendDirection = "uptrend" | "downtrend" | "ranging";
-export type TradeGrade = "A+" | "A" | "B" | "C" | "avoid" | "WAIT";
-export type MarketRegime = "trending" | "ranging" | "volatile" | "choppy";
+export type TradeGrade = "A+" | "A" | "B" | "C" | "avoid";
 
 export interface AnalysisResult {
   marketBias: MarketBias;
-  marketRegime?: MarketRegime;
   structure: {
     trend: TrendDirection;
     higherHighs: boolean;
@@ -61,10 +59,6 @@ export interface AnalysisResult {
   };
   tradeGrade?: TradeGrade;
   confidence: number;
-  keyReasoning?: string[];
-  noTradeReason?: string | null;
-  alignmentScore?: number;
-  contradictions?: string[];
   confidenceFactors: string[];
   reasoning: string;
   invalidationConditions: string[];
@@ -78,7 +72,15 @@ export interface AnalysisRecord {
   imageUrl: string | null;
   result: AnalysisResult | null;
   promptVersion: string;
-  aiModel?: string;
   processingTimeMs?: number | null;
   createdAt: string;
+}
+
+export interface AnalysisStats {
+  total: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  avgConfidence: number;
+  byTimeframe: Array<{ timeframe: string; count: number }>;
 }

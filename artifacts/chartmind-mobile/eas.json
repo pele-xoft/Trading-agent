@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://bedfb3c6-0f46-4776-85c9-9828fd68d1df-00-269lg5n2o7odw-3vki1cvh.worf.replit.dev"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://bedfb3c6-0f46-4776-85c9-9828fd68d1df-00-269lg5n2o7odw-3vki1cvh.worf.replit.dev"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "REPLACE_WITH_YOUR_DEPLOYED_API_URL"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

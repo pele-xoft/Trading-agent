@@ -8,9 +8,11 @@ import { globalRateLimiter } from "./middleware/rate-limit.js";
 
 const app: Express = express();
 
+app.set("trust proxy", 1);
+
 // ── Security first ────────────────────────────────────────────────────────────
 app.use(securityHeaders);
-app.use(cors({ origin: true, credentials: false }));
+app.use(cors({ origin: true, credentials: true }));
 
 // ── Global rate limiting ──────────────────────────────────────────────────────
 app.use(globalRateLimiter);
@@ -20,8 +22,16 @@ app.use(
   pinoHttp({
     logger,
     serializers: {
-      req(req) { return { id: req.id, method: req.method, url: req.url?.split("?")[0] }; },
-      res(res) { return { statusCode: res.statusCode }; },
+      req(req) {
+        return {
+          id: req.id,
+          method: req.method,
+          url: req.url?.split("?")[0],
+        };
+      },
+      res(res) {
+        return { statusCode: res.statusCode };
+      },
     },
   }),
 );
