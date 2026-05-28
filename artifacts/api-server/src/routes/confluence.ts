@@ -245,7 +245,7 @@ router.post("/", async (req, res) => {
           isRetracement: scored.perTimeframeScored.find(s => s.timeframe === r.timeframe)?.isRetracement ?? false,
           keyLevel: r.keyLevel,
         })),
-      } as ReturnType<typeof computeMockConfluence>;
+      } as unknown as ReturnType<typeof computeMockConfluence>;
     }
 
     const totalCostUsd = perTimeframe.reduce((s, r) => s + r.costUsd, 0);

@@ -210,7 +210,7 @@ function TabBar({ active, onChange, historyCount }: { active: Tab; onChange: (t:
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("full");
   const [currentAnalysis, setCurrentAnalysis] = useState<AnalysisRecord | null>(null);
-  const [confluenceResult, setConfluenceResult] = useState<unknown>(null);
+  const [confluenceResult, setConfluenceResult] = useState<Record<string, unknown> | null>(null);
   const [slots, setSlots] = useState<ChartSlot[]>(initSlots);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -364,7 +364,7 @@ export default function Home() {
                 isMockMode={isMockMode}
               />
               {confluenceResult && !isAnalyzingFull && (
-                <ConfluenceCard data={confluenceResult as Parameters<typeof ConfluenceCard>[0]["data"]} />
+                <ConfluenceCard data={confluenceResult as unknown as Parameters<typeof ConfluenceCard>[0]["data"]} />
               )}
               {!confluenceResult && !isAnalyzingFull && !errorMsg && slots.every(s => !s.imageDataUrl) && (
                 <div className="flex flex-col items-center gap-3 py-6 text-center cm-stagger-3">

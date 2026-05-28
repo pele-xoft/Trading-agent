@@ -93,7 +93,7 @@ Return your complete analysis as a JSON object matching the exact schema in your
   const result = parseAndValidate(rawText);
 
   // Blend AI confidence with rule-based composite signal (70/30 weighting)
-  const composite = computeCompositeSignal(result as Parameters<typeof computeCompositeSignal>[0]);
+  const composite = computeCompositeSignal(result as unknown as Parameters<typeof computeCompositeSignal>[0]);
   result.confidence = blendConfidence(result.confidence as number, composite.confidence);
 
   // Compute trade grade server-side as a safety override if AI missed it or inflated it

@@ -15,7 +15,7 @@ export function getMockAnalysis() {
     indicators: {
       movingAverages: {
         fastAboveSlow: true, priceAboveFast: true, priceAboveSlow: true,
-        crossoverRecent: true, crossoverType: "golden" as const,
+        crossoverRecent: true, crossoverType: "golden" as "golden" | "death" | "none",
         description: "Golden cross confirmed — fast MA above slow MA, price above both. Bullish alignment.",
       },
       rsi: { value: 62.4, zone: "bullish" as const, divergence: "none" as const, description: "RSI 62.4 — mid bullish zone, room to continue without being overbought." },
@@ -201,7 +201,7 @@ const TF_MOCKS = {
 };
 
 export function getMockTimeframeAnalysis(timeframe: string): ReturnType<typeof getMockAnalysis> {
-  return (TF_MOCKS as Record<string, ReturnType<typeof getMockAnalysis>>)[timeframe] ?? getMockAnalysis();
+  return (TF_MOCKS as unknown as Record<string, ReturnType<typeof getMockAnalysis>>)[timeframe] ?? getMockAnalysis();
 }
 
 // ── Confluence computation (mock mode) ────────────────────────────────────────
@@ -212,7 +212,7 @@ export function computeMockConfluence(timeframes: string[]) {
 
   const entries = timeframes.map(tf => ({
     tf,
-    data: (TF_MOCKS as Record<string, ReturnType<typeof getMockAnalysis>>)[tf] ?? getMockAnalysis(),
+    data: (TF_MOCKS as unknown as Record<string, ReturnType<typeof getMockAnalysis>>)[tf] ?? getMockAnalysis(),
     weight: TF_WEIGHTS[tf] ?? 0.2,
   }));
 
@@ -291,7 +291,7 @@ export function computeMockConfluence(timeframes: string[]) {
     entryCondition = `Wait for ${entries.filter(e => e.data.marketBias !== overallBias).map(e => e.tf).join(", ")} to confirm ${overallBias} direction before entering.`;
   }
 
-  const entryTFData = (TF_MOCKS as Record<string, ReturnType<typeof getMockAnalysis>>)[entryTimeframe] ?? getMockAnalysis();
+  const entryTFData = (TF_MOCKS as unknown as Record<string, ReturnType<typeof getMockAnalysis>>)[entryTimeframe] ?? getMockAnalysis();
   const finalSetup = {
     type: recommendation,
     entryZone: entryTFData.tradeSetup.entryZone,
