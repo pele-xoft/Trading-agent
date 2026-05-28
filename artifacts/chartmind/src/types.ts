@@ -2,6 +2,7 @@ export type Timeframe = "5m" | "15m" | "1h" | "4h" | "1D";
 export type MarketBias = "bullish" | "bearish" | "neutral";
 export type TradeType = "buy" | "sell" | "wait";
 export type TrendDirection = "uptrend" | "downtrend" | "ranging";
+export type TradeGrade = "A+" | "A" | "B" | "Avoid" | "WAIT";
 
 export interface AnalysisResult {
   marketBias: MarketBias;
@@ -56,6 +57,7 @@ export interface AnalysisResult {
     takeProfits: Array<{ level: number; label: string; rationale: string }>;
     riskRewardRatio: number;
   };
+  tradeGrade: TradeGrade;
   confidence: number;
   confidenceFactors: string[];
   reasoning: string;
@@ -69,5 +71,6 @@ export interface AnalysisRecord {
   imageUrl: string;
   result: AnalysisResult | null;
   promptVersion: string;
+  aiModel: string;
   createdAt: string;
 }

@@ -1,5 +1,31 @@
 import { useEffect, useState } from "react";
-import type { AnalysisRecord, MarketBias, TradeType } from "../types";
+import type { AnalysisRecord, MarketBias, TradeGrade, TradeType } from "../types";
+
+// ── Trade grade config ────────────────────────────────────────────────────────
+const GRADE_CFG: Record<TradeGrade, { color: string; bg: string; border: string; glow: string }> = {
+  "A+": { color: "var(--cm-bullish)", bg: "var(--cm-bullish-dim)", border: "rgba(0,230,118,0.4)", glow: "0 0 12px rgba(0,230,118,0.4)" },
+  "A":  { color: "var(--cm-bullish)", bg: "var(--cm-bullish-dim)", border: "rgba(0,230,118,0.25)", glow: "none" },
+  "B":  { color: "var(--cm-amber)",   bg: "var(--cm-amber-dim)",   border: "rgba(245,166,35,0.3)",  glow: "none" },
+  "Avoid": { color: "var(--cm-bearish)", bg: "var(--cm-bearish-dim)", border: "rgba(255,61,87,0.3)", glow: "none" },
+  "WAIT":  { color: "var(--cm-amber)",   bg: "var(--cm-amber-dim)",   border: "rgba(245,166,35,0.25)", glow: "none" },
+};
+
+function TradeGradeBadge({ grade }: { grade: TradeGrade }) {
+  const cfg = GRADE_CFG[grade] ?? GRADE_CFG["B"];
+  const icon = grade === "A+" ? "★" : grade === "Avoid" ? "✕" : grade === "WAIT" ? "⏸" : "◆";
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="font-black px-2.5 py-1.5 rounded-xl border text-sm"
+        style={{ fontFamily: "var(--cm-font-mono)", color: cfg.color, background: cfg.bg, borderColor: cfg.border, boxShadow: cfg.glow, letterSpacing: "0.05em" }}>
+        {icon} {grade}
+      </span>
+      <span className="text-xs font-bold uppercase tracking-widest"
+        style={{ color: "var(--cm-text-muted)", fontFamily: "var(--cm-font-display)", fontSize: "0.5rem" }}>
+        GRADE
+      </span>
+    </div>
+  );
+}
 
 // ── Count-up hook ─────────────────────────────────────────────────────────────
 function useCountUp(to: number, duration = 1200): number {
@@ -263,7 +289,10 @@ export function AnalysisCard({ analysis }: { analysis: AnalysisRecord }) {
             {analysis.aiModel === "mock" ? "Demo analysis" : "GPT-4o vision"}
           </p>
         </div>
-        <ConfidenceRing value={r.confidence} />
+        <div className="flex flex-col items-end gap-2">
+          {r.tradeGrade && <TradeGradeBadge grade={r.tradeGrade} />}
+          <ConfidenceRing value={r.confidence} />
+        </div>
       </div>
 
       {/* ── Indicator pills (horizontal scroll) ── */}

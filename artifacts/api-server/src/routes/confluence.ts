@@ -3,6 +3,7 @@ import { analyzeChart } from "../lib/ai.service.js";
 import { getMockTimeframeAnalysis, computeMockConfluence } from "../lib/mock-analysis.js";
 import { hashImage, getCachedResult, cacheResult } from "../lib/cache.js";
 import { db, analysesTable, mtfAnalysesTable } from "@workspace/db";
+import { PROMPT_VERSION } from "../lib/prompt-builder.js";
 
 const router = Router();
 
@@ -179,7 +180,7 @@ router.post("/", async (req, res) => {
           status: "complete",
           timeframe: tf,
           imageUrl: chart.imageUrl,
-          promptVersion: "1.0.0",
+          promptVersion: PROMPT_VERSION,
           aiModel: fromCache ? "cache" : IS_MOCK_MODE ? "mock" : "gpt-4o-mini",
           processingTimeMs: 0,
           result,

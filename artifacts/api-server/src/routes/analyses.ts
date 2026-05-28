@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { db, analysesTable } from "@workspace/db";
-import { desc, eq, count, sum, gte, and } from "drizzle-orm";
+import { desc, eq, count, sum, gte } from "drizzle-orm";
 import { analyzeChart } from "../lib/ai.service.js";
 import { hashImage, getCachedResult, cacheResult, getCacheHits } from "../lib/cache.js";
+import { PROMPT_VERSION } from "../lib/prompt-builder.js";
 
 const router = Router();
 
@@ -91,7 +92,7 @@ router.post("/", async (req, res) => {
         status: "complete",
         timeframe,
         imageUrl,
-        promptVersion: "1.0.0",
+        promptVersion: PROMPT_VERSION,
         aiModel: "cache",
         processingTimeMs: 0,
         result: cached as Record<string, unknown>,
@@ -105,6 +106,7 @@ router.post("/", async (req, res) => {
         imageUrl: record.imageUrl,
         result: record.result,
         promptVersion: record.promptVersion,
+        aiModel: record.aiModel,
         createdAt: record.createdAt.toISOString(),
         cached: true,
         costUsd: 0,
@@ -144,6 +146,7 @@ router.post("/", async (req, res) => {
       imageUrl: record.imageUrl,
       result: record.result,
       promptVersion: record.promptVersion,
+      aiModel: record.aiModel,
       createdAt: record.createdAt.toISOString(),
       cached: false,
       costUsd,
@@ -174,6 +177,7 @@ router.get("/", async (req, res) => {
         imageUrl: r.imageUrl,
         result: r.result,
         promptVersion: r.promptVersion,
+        aiModel: r.aiModel,
         createdAt: r.createdAt.toISOString(),
         cached: r.cacheHit,
         costUsd: r.costUsd,
@@ -258,6 +262,7 @@ router.get("/:id", async (req, res) => {
       imageUrl: row.imageUrl,
       result: row.result,
       promptVersion: row.promptVersion,
+      aiModel: row.aiModel,
       createdAt: row.createdAt.toISOString(),
       cached: row.cacheHit,
       costUsd: row.costUsd,

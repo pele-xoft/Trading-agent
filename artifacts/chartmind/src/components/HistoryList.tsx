@@ -1,4 +1,13 @@
-import type { AnalysisRecord, MarketBias, TradeType } from "../types";
+import type { AnalysisRecord, MarketBias, TradeGrade, TradeType } from "../types";
+
+const GRADE_COLOR: Record<TradeGrade, string> = {
+  "A+": "var(--cm-bullish)", "A": "var(--cm-bullish)", "B": "var(--cm-amber)",
+  "Avoid": "var(--cm-bearish)", "WAIT": "var(--cm-amber)",
+};
+const GRADE_BG: Record<TradeGrade, string> = {
+  "A+": "var(--cm-bullish-dim)", "A": "var(--cm-bullish-dim)", "B": "var(--cm-amber-dim)",
+  "Avoid": "var(--cm-bearish-dim)", "WAIT": "var(--cm-amber-dim)",
+};
 
 interface HistoryListProps {
   analyses: AnalysisRecord[];
@@ -149,12 +158,20 @@ export function HistoryList({ analyses, onSelect, selectedId }: HistoryListProps
                     </span>
                   )}
                 </div>
-                {r && (
-                  <span className="text-xs font-black"
-                    style={{ fontFamily: "var(--cm-font-mono)", color: confColor, fontSize: "0.7rem" }}>
-                    {r.confidence}%
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {r?.tradeGrade && (
+                    <span className="text-xs font-black px-1.5 py-0.5 rounded-lg"
+                      style={{ fontFamily: "var(--cm-font-mono)", color: GRADE_COLOR[r.tradeGrade], background: GRADE_BG[r.tradeGrade], fontSize: "0.6rem" }}>
+                      {r.tradeGrade}
+                    </span>
+                  )}
+                  {r && (
+                    <span className="text-xs font-black"
+                      style={{ fontFamily: "var(--cm-font-mono)", color: confColor, fontSize: "0.7rem" }}>
+                      {r.confidence}%
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </button>
