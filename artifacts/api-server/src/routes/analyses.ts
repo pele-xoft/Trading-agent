@@ -4,6 +4,7 @@ import { desc, eq, count, sum, gte } from "drizzle-orm";
 import { analyzeChart } from "../lib/ai.service.js";
 import { hashImage, getCachedResult, cacheResult, getCacheHits } from "../lib/cache.js";
 import { PROMPT_VERSION } from "../lib/prompt-builder.js";
+import { analysisRateLimiter } from "../middleware/rate-limit.js";
 
 const router = Router();
 
@@ -42,7 +43,7 @@ router.get("/config", (_req, res) => {
 });
 
 // POST /api/analyses — run analysis
-router.post("/", async (req, res) => {
+router.post("/", analysisRateLimiter, async (req, res) => {
   try {
     const { imageUrl, timeframe } = req.body as { imageUrl?: string; timeframe?: string };
 

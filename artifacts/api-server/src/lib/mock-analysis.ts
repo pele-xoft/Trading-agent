@@ -1,15 +1,13 @@
-// ── Grade types ───────────────────────────────────────────────────────────────
 type TradeGrade = "A+" | "A" | "B" | "Avoid" | "WAIT";
+type MarketRegime = "trending" | "ranging" | "volatile" | "choppy";
 
-// ── Base mock result ──────────────────────────────────────────────────────────
+// ── Base mock result (generic / fallback) ─────────────────────────────────────
 export function getMockAnalysis() {
   return {
+    marketRegime: "trending" as MarketRegime,
     marketBias: "bullish" as const,
     structure: {
-      trend: "uptrend" as const,
-      higherHighs: true,
-      lowerLows: false,
-      keyLevel: 1.08420,
+      trend: "uptrend" as const, higherHighs: true, lowerLows: false, keyLevel: 1.08420,
       description: "Price making consistent higher highs and higher lows — clean uptrend structure.",
     },
     indicators: {
@@ -42,6 +40,16 @@ export function getMockAnalysis() {
     },
     tradeGrade: "A" as TradeGrade,
     confidence: 72,
+    alignmentScore: 78,
+    contradictions: [] as string[],
+    keyReasoning: [
+      "Higher highs / higher lows — clean uptrend structure intact",
+      "Golden cross confirmed — fast MA above slow MA, bullish alignment",
+      "RSI 62.4 mid-bullish zone — not overbought, momentum supports continuation",
+      "Stochastic bullish K/D cross at 71 — short-term momentum shifting upward",
+      "Long setup: 2.1:1 R:R — good risk management with structural stop",
+    ] as string[],
+    noTradeReason: null as string | null,
     confidenceFactors: ["MA golden cross + RSI + Stoch all bullish", "Clean HH/HL structure", "Mid-range RSI — not overbought"],
     reasoning: "Clean bullish confluence: fresh golden cross, price above both MAs, RSI mid-bullish and Stochastic pointing up. No overbought conditions. Structure is healthy with room to the next resistance at 1.09000.",
     invalidationConditions: ["Close below 1.08050 (swing low)", "RSI drops below 50", "Death cross forms"],
@@ -52,6 +60,7 @@ export function getMockAnalysis() {
 // ── Per-timeframe realistic mock data ─────────────────────────────────────────
 const TF_MOCKS = {
   "1D": {
+    marketRegime: "trending" as MarketRegime,
     marketBias: "bullish" as const,
     structure: {
       trend: "uptrend" as const, higherHighs: true, lowerLows: false, keyLevel: 1.08200,
@@ -83,6 +92,16 @@ const TF_MOCKS = {
     },
     tradeGrade: "A" as TradeGrade,
     confidence: 78,
+    alignmentScore: 85,
+    contradictions: [] as string[],
+    keyReasoning: [
+      "Higher highs / higher lows over 6 weeks — macro uptrend fully intact",
+      "Price above both daily MAs with strong MA separation — trending health confirmed",
+      "RSI 58 mid-bullish zone — has room to continue without reversal risk",
+      "Stochastic bullish cross from mid-range — daily momentum supporting continuation",
+      "Long setup: 2.5:1 R:R from daily MA support — excellent risk management",
+    ] as string[],
+    noTradeReason: null as string | null,
     confidenceFactors: ["Daily trend strongly bullish", "Price above both daily MAs", "RSI mid-range — not overbought", "Clean HH/HL structure over 6 weeks"],
     reasoning: "Daily chart shows an established, healthy uptrend with no signs of exhaustion. Higher timeframe context is clearly bullish and RSI has room before overbought. This is the directional context for all lower timeframes.",
     invalidationConditions: ["Daily close below 1.07800", "Daily RSI falls below 45", "Bearish engulfing candle closes below daily MA"],
@@ -90,6 +109,7 @@ const TF_MOCKS = {
   },
 
   "4h": {
+    marketRegime: "trending" as MarketRegime,
     marketBias: "bullish" as const,
     structure: {
       trend: "uptrend" as const, higherHighs: true, lowerLows: false, keyLevel: 1.08350,
@@ -121,6 +141,16 @@ const TF_MOCKS = {
     },
     tradeGrade: "A" as TradeGrade,
     confidence: 74,
+    alignmentScore: 80,
+    contradictions: [] as string[],
+    keyReasoning: [
+      "4H higher highs / higher lows — trend continuation pattern confirmed",
+      "Fresh golden cross — fast MA above slow MA after healthy pullback retest",
+      "RSI 55.2 recovering from pullback — bullish zone with no overbought concern",
+      "Stochastic bullish K/D cross at 58 — momentum confirming next leg up",
+      "Long setup: 2.2:1 R:R at MA support retest — aligned with D1 HTF trend",
+    ] as string[],
+    noTradeReason: null as string | null,
     confidenceFactors: ["Aligned with daily bullish trend", "MA retest bounce — quality entry", "Stoch bullish crossover", "RSI recovering without being overbought"],
     reasoning: "4H confirms the daily bullish trend. Healthy pullback to MA zone was retested and held perfectly. Fresh golden cross with price above both MAs. This is a quality continuation setup aligned with the HTF context.",
     invalidationConditions: ["4H close below 1.08050", "Stochastic rolls over below 40", "4H death cross forms"],
@@ -128,6 +158,7 @@ const TF_MOCKS = {
   },
 
   "1h": {
+    marketRegime: "ranging" as MarketRegime,
     marketBias: "neutral" as const,
     structure: {
       trend: "ranging" as const, higherHighs: false, lowerLows: false, keyLevel: 1.08420,
@@ -155,6 +186,16 @@ const TF_MOCKS = {
     },
     tradeGrade: "WAIT" as TradeGrade,
     confidence: 52,
+    alignmentScore: 0,
+    contradictions: [] as string[],
+    keyReasoning: [
+      "Price consolidating in a range (1.08300–1.08520) — no directional trend on 1H",
+      "Moving averages converging without clear direction — 1H trend on pause",
+      "RSI 51.0 — dead-centre neutral, no momentum bias in either direction",
+      "Stochastic 52 mid-range, no K/D crossover — oscillator neutral",
+      "Awaiting entry trigger — breakout above 1.08520 needed to confirm upside aligned with HTF",
+    ] as string[],
+    noTradeReason: "1H consolidating in a tight range with neutral RSI and no MA direction. Wait for a clean candle close above 1.08520 with RSI > 55 — this confirms the upside breakout aligned with the 4H/1D bullish trend." as string | null,
     confidenceFactors: ["HTF bullish context — bias for upside breakout", "1H consolidation after strong move — typical continuation pattern", "Range compression near resistance"],
     reasoning: "1H is consolidating post-4H bounce. Neutral on this timeframe alone, but given 1D and 4H bullish context, upside breakout is higher probability. No trade until 1.08520 is cleared with a candle close.",
     invalidationConditions: ["Breakdown below 1.08280 range low", "RSI drops below 45 inside the range"],
@@ -162,6 +203,7 @@ const TF_MOCKS = {
   },
 
   "15m": {
+    marketRegime: "ranging" as MarketRegime,
     marketBias: "bearish" as const,
     structure: {
       trend: "downtrend" as const, higherHighs: false, lowerLows: true, keyLevel: 1.08420,
@@ -193,6 +235,18 @@ const TF_MOCKS = {
     },
     tradeGrade: "WAIT" as TradeGrade,
     confidence: 48,
+    alignmentScore: 0,
+    contradictions: [
+      "15M bearish structure conflicts with 4H/1D bullish trend — this is a retracement, not a reversal",
+    ] as string[],
+    keyReasoning: [
+      "15M showing lower highs and lower lows — short-term bearish retracement within HTF uptrend",
+      "Death cross on 15M — short-term MAs bearish, but this is a counter-trend setup",
+      "RSI 38.5 approaching oversold — 15M selling momentum nearly exhausted",
+      "Stochastic 22 in oversold zone — selling exhaustion signal, bounce likely forming",
+      "Awaiting entry trigger — stochastic bounce + price reclaim of 1.08380 needed for confirmation",
+    ] as string[],
+    noTradeReason: "15M is in a counter-trend pullback within the HTF uptrend. Wait for stochastic to bounce from oversold territory and price to reclaim 1.08380 — this confirms the LTF reversal and the HTF continuation entry signal." as string | null,
     confidenceFactors: ["Stochastic approaching oversold — potential bounce zone", "HTF bullish — short-term pullback likely to reverse", "Price near 1H range support confluence"],
     reasoning: "15M is in a normal pullback within the HTF uptrend. Death cross and bearish RSI confirm short-term selling but stochastic nearing oversold signals the low is forming. This is the optimal entry zone for the HTF continuation once 15M reversal is confirmed.",
     invalidationConditions: ["Close below 1.08270 support", "15M RSI breaks below 30 and continues lower", "4H candle closes below 1.08150"],
@@ -274,10 +328,10 @@ export function computeMockConfluence(timeframes: string[]) {
 
   const agreeList = entries.filter(e => e.data.marketBias === overallBias).map(e => e.tf).join(", ");
   let reasoning = overallBias === "conflicted"
-    ? `Timeframes are split — no clear directional bias. Wait for market to resolve before risking capital.`
+    ? "Timeframes are split — no clear directional bias. Wait for market to resolve before risking capital."
     : `${agreeCount}/${entries.length} timeframes show ${overallBias} bias (${agreeList}).`;
   if (htfDominates) reasoning += ` Higher-timeframe trend is ${higherTimeframeBias} — lower-timeframe counter-move is a retracement. Wait for ${entryTimeframe} to confirm ${higherTimeframeBias} before entering.`;
-  else if (allAgree) reasoning += ` All timeframes aligned — high-conviction setup.`;
+  else if (allAgree) reasoning += " All timeframes aligned — high-conviction setup.";
 
   let entryCondition: string;
   if (overallBias === "conflicted") {
@@ -318,19 +372,8 @@ export function computeMockConfluence(timeframes: string[]) {
   }));
 
   return {
-    overallBias,
-    alignmentScore,
-    confluenceStrength,
-    alignedCount: agreeCount,
-    totalCount: entries.length,
-    higherTimeframeBias,
-    entryTimeframe,
-    recommendation,
-    reasoning,
-    entryCondition,
-    conflictingSignals,
-    overallConfidence,
-    finalSetup,
-    perTimeframe,
+    overallBias, alignmentScore, confluenceStrength, alignedCount: agreeCount,
+    totalCount: entries.length, higherTimeframeBias, entryTimeframe, recommendation,
+    reasoning, entryCondition, conflictingSignals, overallConfidence, finalSetup, perTimeframe,
   };
 }

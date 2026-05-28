@@ -3,9 +3,11 @@ export type MarketBias = "bullish" | "bearish" | "neutral";
 export type TradeType = "buy" | "sell" | "wait";
 export type TrendDirection = "uptrend" | "downtrend" | "ranging";
 export type TradeGrade = "A+" | "A" | "B" | "Avoid" | "WAIT";
+export type MarketRegime = "trending" | "ranging" | "volatile" | "choppy";
 
 export interface AnalysisResult {
   marketBias: MarketBias;
+  marketRegime?: MarketRegime;
   structure: {
     trend: TrendDirection;
     higherHighs: boolean;
@@ -59,6 +61,10 @@ export interface AnalysisResult {
   };
   tradeGrade: TradeGrade;
   confidence: number;
+  keyReasoning?: string[];
+  noTradeReason?: string | null;
+  alignmentScore?: number;
+  contradictions?: string[];
   confidenceFactors: string[];
   reasoning: string;
   invalidationConditions: string[];

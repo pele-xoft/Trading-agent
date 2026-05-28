@@ -4,6 +4,7 @@ import { getMockTimeframeAnalysis, computeMockConfluence } from "../lib/mock-ana
 import { hashImage, getCachedResult, cacheResult } from "../lib/cache.js";
 import { db, analysesTable, mtfAnalysesTable } from "@workspace/db";
 import { PROMPT_VERSION } from "../lib/prompt-builder.js";
+import { confluenceRateLimiter } from "../middleware/rate-limit.js";
 
 const router = Router();
 
@@ -126,7 +127,7 @@ function scoreConfluence(perTF: Array<{ timeframe: string; bias: string; confide
 }
 
 // POST /api/confluence
-router.post("/", async (req, res) => {
+router.post("/", confluenceRateLimiter, async (req, res) => {
   const startTime = Date.now();
   try {
     const { charts, instrument } = req.body as {

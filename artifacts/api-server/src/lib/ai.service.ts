@@ -1,6 +1,12 @@
 import OpenAI from "openai";
 import { buildAnalysisPrompt, PROMPT_VERSION } from "./prompt-builder.js";
-import { computeCompositeSignal, blendConfidence } from "./indicator-engine.js";
+import {
+  computeCompositeSignal,
+  blendConfidence,
+  detectMarketRegime,
+  computeAlignmentScore,
+  detectContradictions,
+} from "./indicator-engine.js";
 import { getMockAnalysis } from "./mock-analysis.js";
 
 const isMockMode =
@@ -39,6 +45,7 @@ Read carefully and precisely:
 - RSI oscillator — exact value, zone, any divergence visible
 - Stochastic — K and D values, zone, crossover direction
 - Price structure — trend direction, swing highs/lows, key S/R levels
+- Market regime — trending, ranging, volatile, or choppy?
 
 Return your complete analysis as a JSON object matching the exact schema in your instructions. If a price level is unclear, estimate conservatively and note it in warnings.`;
 
@@ -46,10 +53,8 @@ Return your complete analysis as a JSON object matching the exact schema in your
   try {
     response = await openai!.chat.completions.create({
       model: AI_MODEL,
-      // 1500 max tokens is sufficient for the structured JSON response
-      // Original 2048 was wasteful — saves ~25% on output token costs
-      max_tokens: 1500,
-      temperature: 0.05, // Very low temperature for consistent, disciplined output
+      max_tokens: 1600,
+      temperature: 0.05,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -60,8 +65,6 @@ Return your complete analysis as a JSON object matching the exact schema in your
               type: "image_url",
               image_url: {
                 url: `data:${params.mimeType};base64,${params.imageBase64}`,
-                // Keep "high" detail for precise indicator reading (RSI values, price levels)
-                // Client already resizes to 1024px max — cost is controlled client-side
                 detail: "high",
               },
             },
@@ -75,10 +78,8 @@ Return your complete analysis as a JSON object matching the exact schema in your
     if (status === 429 || status === 401) {
       await new Promise((r) => setTimeout(r, 800 + Math.random() * 400));
       const mockResult = getMockAnalysis() as Record<string, unknown>;
-      const warnings = mockResult.warnings as string[];
-      warnings.push(
-        status === 429
-          ? "OpenAI quota exceeded — showing demo analysis"
+      (mockResult.warnings as string[]).push(
+        status === 429 ? "OpenAI quota exceeded — showing demo analysis"
           : "OpenAI API key invalid — showing demo analysis"
       );
       return { result: mockResult, processingTimeMs: Date.now() - start, promptVersion: PROMPT_VERSION, model: "mock-fallback" };
@@ -92,16 +93,53 @@ Return your complete analysis as a JSON object matching the exact schema in your
 
   const result = parseAndValidate(rawText);
 
-  // Blend AI confidence with rule-based composite signal (70/30 weighting)
+  // ── Rule-based confidence blending (70% AI / 30% rule-based) ──────────────
   const composite = computeCompositeSignal(result as unknown as Parameters<typeof computeCompositeSignal>[0]);
   result.confidence = blendConfidence(result.confidence as number, composite.confidence);
 
-  // Compute trade grade server-side as a safety override if AI missed it or inflated it
-  if (!result.tradeGrade || result.tradeGrade === undefined) {
+  // ── Market intelligence layer ──────────────────────────────────────────────
+  const analysisInput = result as unknown as Parameters<typeof detectMarketRegime>[0];
+  const setup = result.tradeSetup as Record<string, unknown> | undefined;
+  const tradeType = (setup?.type as "buy" | "sell" | "wait") ?? "wait";
+
+  if (!result.marketRegime) {
+    result.marketRegime = detectMarketRegime(analysisInput);
+  }
+  result.alignmentScore = computeAlignmentScore(analysisInput, tradeType);
+  result.contradictions = detectContradictions(analysisInput);
+
+  // ── Explainability: generate key reasoning if AI didn't provide it ─────────
+  if (!Array.isArray(result.keyReasoning) || (result.keyReasoning as string[]).length === 0) {
+    result.keyReasoning = generateKeyReasoning(result);
+  }
+
+  // ── Trade grade computation + validation ───────────────────────────────────
+  if (!result.tradeGrade) {
     result.tradeGrade = computeTradeGrade(result);
   } else {
-    // Validate AI-assigned grade against our rules — downgrade if needed
     result.tradeGrade = validateTradeGrade(result.tradeGrade as string, result);
+  }
+
+  // ── Regime-aware grade capping ─────────────────────────────────────────────
+  const regime = result.marketRegime as string;
+  const grade = result.tradeGrade as string;
+  if (regime === "choppy" && (grade === "A+" || grade === "A")) {
+    result.tradeGrade = "B";
+    (result.warnings as string[]).push("Grade reduced to B — choppy market conditions limit setup quality");
+  } else if (regime === "volatile" && grade === "A+") {
+    result.tradeGrade = "A";
+    (result.warnings as string[]).push("Grade capped at A — volatile conditions, elevated reversal risk");
+  }
+
+  // ── Surface contradictions as warnings ────────────────────────────────────
+  const contradictions = result.contradictions as string[];
+  if (contradictions.length > 0) {
+    const warnings = result.warnings as string[];
+    for (const c of contradictions) {
+      if (!warnings.some(w => w.includes(c.slice(0, 30)))) {
+        warnings.push(c);
+      }
+    }
   }
 
   return { result, processingTimeMs, promptVersion: PROMPT_VERSION, model: AI_MODEL };
@@ -121,7 +159,6 @@ function computeTradeGrade(result: Record<string, unknown>): string {
   const rsiZone = rsi?.zone as string ?? "neutral";
   const type = setup.type as string;
 
-  // Hard safety rules — prevent bad grades
   if (rrRatio < 1.5) return "Avoid";
   if (type === "buy" && (rsiZone === "overbought" || rsiVal > 75)) {
     return rrRatio >= 2 ? "B" : "Avoid";
@@ -130,7 +167,6 @@ function computeTradeGrade(result: Record<string, unknown>): string {
     return rrRatio >= 2 ? "B" : "Avoid";
   }
 
-  // Count aligned signals
   const isBuy = type === "buy";
   let aligned = 0;
   let total = 0;
@@ -174,13 +210,88 @@ function validateTradeGrade(aiGrade: string, result: Record<string, unknown>): s
   const type = setup.type as string;
   const rrRatio = (setup.riskRewardRatio as number) ?? 0;
 
-  // Hard downgrade rules
   if (rrRatio < 1.5) return "Avoid";
   if (type === "buy" && (rsiZone === "overbought" || rsiVal > 75) && (aiGrade === "A+" || aiGrade === "A")) return "B";
   if (type === "sell" && (rsiZone === "oversold" || rsiVal < 25) && (aiGrade === "A+" || aiGrade === "A")) return "B";
 
   const validGrades = ["A+", "A", "B", "Avoid", "WAIT"];
   return validGrades.includes(aiGrade) ? aiGrade : computeTradeGrade(result);
+}
+
+// ── Key reasoning generator ───────────────────────────────────────────────────
+function generateKeyReasoning(result: Record<string, unknown>): string[] {
+  const reasons: string[] = [];
+  const indicators = result.indicators as Record<string, unknown> | undefined;
+  const ma = indicators?.movingAverages as Record<string, unknown> | undefined;
+  const rsi = indicators?.rsi as Record<string, unknown> | undefined;
+  const sto = indicators?.stochastic as Record<string, unknown> | undefined;
+  const structure = result.structure as Record<string, unknown> | undefined;
+  const setup = result.tradeSetup as Record<string, unknown> | undefined;
+
+  const trend = structure?.trend as string ?? "ranging";
+  const rsiVal = (rsi?.value as number) ?? 50;
+  const rsiZone = rsi?.zone as string ?? "neutral";
+  const rsiDiv = rsi?.divergence as string ?? "none";
+  const stoZone = sto?.zone as string ?? "neutral";
+  const stoCross = sto?.crossover as string ?? "none";
+  const kVal = (sto?.kValue as number) ?? 50;
+
+  // 1. Structure
+  if (trend === "uptrend") reasons.push("Higher highs / higher lows — clean uptrend structure intact");
+  else if (trend === "downtrend") reasons.push("Lower highs / lower lows — established downtrend structure");
+  else reasons.push("Price consolidating in a range — no clear directional trend on this timeframe");
+
+  // 2. Moving averages
+  if (ma) {
+    const ct = ma.crossoverType as string ?? "none";
+    const fa = ma.fastAboveSlow as boolean;
+    const paf = ma.priceAboveFast as boolean;
+    if (ct === "golden") reasons.push("Golden cross confirmed — fast MA above slow MA, bullish structural alignment");
+    else if (ct === "death") reasons.push("Death cross confirmed — fast MA below slow MA, bearish structural alignment");
+    else if (fa && paf) reasons.push("Price above both MAs, MAs stacked bullish — trend support intact");
+    else if (!fa && !paf) reasons.push("Price below both MAs, MAs stacked bearish — trend resistance overhead");
+    else reasons.push("Moving averages converging without clear direction — trend pause");
+  }
+
+  // 3. RSI
+  if (rsiDiv !== "none") {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} with ${rsiDiv} divergence — momentum contradicts price action`);
+  } else if (rsiZone === "bullish") {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} mid-bullish zone — not overbought, momentum supports continuation`);
+  } else if (rsiZone === "bearish") {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} mid-bearish zone — not oversold, momentum supports decline`);
+  } else if (rsiZone === "overbought") {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} overbought — long entries carry elevated reversal risk`);
+  } else if (rsiZone === "oversold") {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} oversold — short entries carry elevated bounce risk`);
+  } else {
+    reasons.push(`RSI ${rsiVal.toFixed(1)} — neutral zone, no momentum bias`);
+  }
+
+  // 4. Stochastic
+  if (stoCross === "bullish") {
+    reasons.push(`Stochastic bullish K/D cross at ${kVal.toFixed(0)} — short-term momentum shifting upward`);
+  } else if (stoCross === "bearish") {
+    reasons.push(`Stochastic bearish K/D cross at ${kVal.toFixed(0)} — short-term momentum shifting downward`);
+  } else if (stoZone === "oversold") {
+    reasons.push(`Stochastic ${kVal.toFixed(0)} oversold — selling exhaustion, watch for bounce`);
+  } else if (stoZone === "overbought") {
+    reasons.push(`Stochastic ${kVal.toFixed(0)} overbought — buying exhaustion, watch for pullback`);
+  } else {
+    reasons.push(`Stochastic ${kVal.toFixed(0)} mid-range — oscillator neutral, no extreme`);
+  }
+
+  // 5. Setup summary
+  if (setup && setup.type !== "wait") {
+    const rr = (setup.riskRewardRatio as number) ?? 0;
+    const type = setup.type as string;
+    const label = rr >= 2.5 ? "excellent" : rr >= 2.0 ? "good" : "acceptable";
+    reasons.push(`${type === "buy" ? "Long" : "Short"} setup: ${rr.toFixed(1)}:1 R:R — ${label} risk management`);
+  } else {
+    reasons.push("Awaiting entry trigger — setup forming but conditions not yet met for entry");
+  }
+
+  return reasons.slice(0, 5);
 }
 
 // ── JSON parse & validate ─────────────────────────────────────────────────────
@@ -207,16 +318,23 @@ function parseAndValidate(rawText: string): Record<string, unknown> {
   if (!Array.isArray(r.invalidationConditions)) r.invalidationConditions = [];
   if (!Array.isArray(r.confidenceFactors)) r.confidenceFactors = [];
 
-  // Normalise trend field — AI occasionally outputs variants
+  // Normalise trend field
   const structure = r.structure as Record<string, unknown> | undefined;
   if (structure && typeof structure.trend === "string") {
     const t = structure.trend.toLowerCase();
-    if (t === "sideways" || t === "ranging" || t === "range" || t === "consolidation" || t === "choppy") {
+    if (["sideways", "ranging", "range", "consolidation", "choppy"].includes(t)) {
       structure.trend = "ranging";
-    } else if (t === "uptrend" || t === "up" || t === "bullish") {
+    } else if (["uptrend", "up", "bullish"].includes(t)) {
       structure.trend = "uptrend";
-    } else if (t === "downtrend" || t === "down" || t === "bearish") {
+    } else if (["downtrend", "down", "bearish"].includes(t)) {
       structure.trend = "downtrend";
+    }
+  }
+
+  // Normalise marketRegime — invalid values get re-computed server-side
+  if (r.marketRegime && typeof r.marketRegime === "string") {
+    if (!["trending", "ranging", "volatile", "choppy"].includes(r.marketRegime.toLowerCase())) {
+      delete r.marketRegime;
     }
   }
 
